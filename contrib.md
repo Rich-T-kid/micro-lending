@@ -9,6 +9,8 @@ Welcome to our project! This document outlines the people involved, their roles,
 | Name            | GitHub Handle         | Role(s)              | Email / Contact                |
 |-----------------|-----------------------|----------------------|--------------------------------|
 | Richard Baah| [@Rich-T-kid](#) | Back-end Developer   | rbb98@scarletmail.rutgers.edu  |
+| Jose Lamela | [@jose0andres](#) | Data Engineer | jal601@scarletmail.rutgers.edu |
+|Saksham Mehta | [] |Frontend Developer | |
 | You?            | [Your GitHub ID]      | tbd          | [Your Contact Info]            |
 
 ---
@@ -22,7 +24,18 @@ Welcome to our project! This document outlines the people involved, their roles,
 
 ---
 
-##  Topics of Interest
+## Topics of Interest
 
-This project explores or involves the following topics:
+This project explores or involves the following topics:  
+- Database design and ER modeling  
+- SQL schema creation and query optimization  
+- Transaction logging and audit trails  
+- User account management and access control  
+- Loan application workflows (peer-to-peer and institutional)  
+- Automated credit/repayment assessment  
+- Delinquency and repayment reporting  
+- Peer and admin oversight mechanisms  
+- Financial technology (FinTech) applications  
+- Secure and scalable web application development  
+
 
