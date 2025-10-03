@@ -42,15 +42,17 @@ Link to:
 - Document(document_id, owner_type, owner_id, category, file_url, checksum, uploaded_at, verified_at, status)
 - AuditLog(audit_id, actor_type, actor_id, action, entity_type, entity_id, old_values_json, new_values_json, ip_address, user_agent, occurred_at)
 ### 4.2  API Design
-
-**richard fills out api design**
-[endpoints, req/resp format , auth]
+- Style: REST (FastAPI)
+- Base URL: /api/v1
+- Auth: JWT Bearer via Authorization: Bearer <token>
+- Content-Type: application/json
 ### 4.3 Application Logic
 - borrowers need to pass credit checks --> data is taken from db and passed through alorithm to determine borrower risk rate
 - borrower payment information is taken and stored in db --> automatic payments to creditor
 - creditor dashboard which displays all different borrowers and information from their invesments
 ### 4.4 User Interface
-**saksham fills out UI**
+- Tech: HTML/CSS/JS (lightweight, responsive)
+- Theme: Clean tables + simple forms
 ## 5. Technlology Stack
 **Frontend** - HMTL, CSS, JS
 **Backend** - Python, Fast API

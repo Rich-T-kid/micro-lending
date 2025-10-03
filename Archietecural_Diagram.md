@@ -4,7 +4,7 @@
 The system is a **microlending platform** that allows borrowers to apply for small loans and lenders (peers or institutions) to fund them.  
 It provides loan tracking, repayments, portfolio management, and administrative oversight.
 ## 2. Context Diagram
-![Context Diagram](./microlending-context.png)
+![Context Diagram](./images/contextDiagram.png)
 
 **Actors:**  
 - **Borrower** – applies for loans and makes repayments  
@@ -12,7 +12,7 @@ It provides loan tracking, repayments, portfolio management, and administrative 
 - **Admin** – manages users, loans, and compliance  
 - **Payment Gateway** – processes deposits and repayments  
 ## 3. Component Diagram
-![Component Diagram](./microlending-components.png)
+![Component Diagram](./images/componentDiagram.png)
 
 **Components:**  
 - **Frontend** (HTML, CSS, JS)  
@@ -21,14 +21,14 @@ It provides loan tracking, repayments, portfolio management, and administrative 
 - **Auth Service** (JWT-based authentication)  
 - **Payment Integration** (gateway for disbursement and repayment)  
 ## 4. Deployment Diagram
-![Deployment Diagram](./microlending-deployment.png)
+![Deployment Diagram](./images/deploymentDiagram.png)
 
 - **Railway Hosting**  
 - FastAPI backend container → Railway app service  
 - SQL database → Railway managed DB service  
 - Static frontend → Railway deployment or CDN  
 ## 5. Data Flow Diagram
-![Data Flow Diagram](./microlending-dataflow.png)
+![Data Flow Diagram](./images/dataflowDiagram.png)
 
 - Borrower submits loan application → Backend API → Database  
 - Lender reviews/approves loan → Backend API → Database  
