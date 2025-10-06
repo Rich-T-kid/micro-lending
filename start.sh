@@ -1,6 +1,6 @@
-#!/usr/bin/env sh
+#!/bin/sh
 set -eu
 sh db/scripts/migrate.sh
 echo "✅ Migrations finished"
-# keep container healthy
+# Keep container healthy in Railway
 sleep infinity

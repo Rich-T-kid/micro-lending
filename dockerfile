@@ -1,15 +1,17 @@
+# Dockerfile
 FROM alpine:3.20
 RUN apk add --no-cache mysql-client ca-certificates
 WORKDIR /app
 
-# copy migrations + scripts
+# Copy scripts and migrations
 COPY db/ db/
 COPY start.sh ./start.sh
 
-# make sure scripts are executable
-RUN chmod +x /app/start.sh /app/db/scripts/migrate.sh
+# Normalize line endings (strip CRLF) & ensure executables
+RUN sed -i 's/\r$//' /app/start.sh /app/db/scripts/migrate.sh \
+ && chmod +x /app/start.sh /app/db/scripts/migrate.sh
 
-# Railway public proxy expects TLS; safe to keep on
+# Railway public proxy prefers TLS
 ENV MYSQL_SSL_MODE=REQUIRED
 
 CMD ["./start.sh"]

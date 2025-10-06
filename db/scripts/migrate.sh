@@ -1,40 +1,35 @@
-#!/usr/bin/env sh
+#!/bin/sh
 set -eu
 
 MIGRATION_DIR="db/migrations"
 LOCAL_CONTAINER_NAME="${CONTAINER_NAME:-microlending-mysql}"
 
-# ---- parse mysql URL if provided ----
 parse_mysql_url () {
   url="$1"
-  rest="${url#*://}"             # user:pass@host:port/db
-  userpass="${rest%@*}"          # user:pass
-  hostportdb="${rest#*@}"        # host:port/db
+  rest="${url#*://}"
+  userpass="${rest%@*}"
+  hostportdb="${rest#*@}"
   MYSQLUSER="${userpass%%:*}"
   MYSQLPASSWORD="${userpass#*:}"
-  hostport="${hostportdb%/*}"    # host:port
+  hostport="${hostportdb%/*}"
   MYSQLDATABASE="${hostportdb#*/}"
   MYSQLHOST="${hostport%%:*}"
   MYSQLPORT="${hostport#*:}"
 }
 
-# ---- detect target (Railway vs local) ----
 CONNECT_MODE="LOCAL_DOCKER"
 
 if [ -n "${MYSQL_PUBLIC_URL:-}" ]; then
-  parse_mysql_url "$MYSQL_PUBLIC_URL"
-  CONNECT_MODE="RAILWAY_PUBLIC"
+  parse_mysql_url "$MYSQL_PUBLIC_URL"; CONNECT_MODE="RAILWAY_PUBLIC"
 elif [ -n "${MYSQL_URL:-}" ]; then
-  parse_mysql_url "$MYSQL_URL"
-  CONNECT_MODE="RAILWAY_URL"
+  parse_mysql_url "$MYSQL_URL"; CONNECT_MODE="RAILWAY_URL"
 elif [ -n "${RAILWAY_DATABASE_URL:-}" ]; then
-  parse_mysql_url "$RAILWAY_DATABASE_URL"
-  CONNECT_MODE="RAILWAY_URL"
+  parse_mysql_url "$RAILWAY_DATABASE_URL"; CONNECT_MODE="RAILWAY_URL"
 elif [ -n "${MYSQLHOST:-}" ] && [ -n "${MYSQLPORT:-}" ] && \
      [ -n "${MYSQLUSER:-}" ] && [ -n "${MYSQLPASSWORD:-}" ] && [ -n "${MYSQLDATABASE:-}" ]; then
   CONNECT_MODE="RAILWAY_RAW"
 else
-  # local dev fallback: read .env (only the 3 we need)
+  # local fallback: read minimal vars from .env
   if [ -f ".env" ]; then
     while IFS='=' read -r key val; do
       case "$key" in
@@ -50,24 +45,22 @@ else
 fi
 
 echo "Mode: $CONNECT_MODE"
-echo "DB: ${MYSQLDATABASE:-?} User: ${MYSQLUSER:-?} Host: ${MYSQLHOST:-local}"
+echo "DB: ${MYSQLDATABASE:-?}  User: ${MYSQLUSER:-?}  Host: ${MYSQLHOST:-local}"
 
 MYSQL_SSL_MODE="${MYSQL_SSL_MODE:-REQUIRED}"
 
-# ---- runners ----
 mysql_exec_remote_file() {
   file="$1"
   mysql --protocol=TCP -h "$MYSQLHOST" -P "$MYSQLPORT" -u "$MYSQLUSER" -p"$MYSQLPASSWORD" \
         --ssl-mode="$MYSQL_SSL_MODE" "$MYSQLDATABASE" < "$file"
 }
-
 mysql_exec_remote_query() {
   q="$1"
   mysql -N -B --protocol=TCP -h "$MYSQLHOST" -P "$MYSQLPORT" -u "$MYSQLUSER" -p"$MYSQLPASSWORD" \
         --ssl-mode="$MYSQL_SSL_MODE" "$MYSQLDATABASE" -e "$q"
 }
 
-# Local (dev only) path; not used on Railway but kept for completeness
+# local helpers (for dev)
 mysql_exec_local_file() {
   file="$1"
   docker exec -i "$LOCAL_CONTAINER_NAME" sh -c \
@@ -94,11 +87,11 @@ run_query() {
   esac
 }
 
-# ---- connectivity check ----
+# connectivity check
 run_query "SELECT 1;" >/dev/null 2>&1 || { echo "❌ Cannot connect to MySQL"; exit 1; }
 echo "✅ Connected."
 
-# ---- ensure migration history ----
+# ensure migration history
 TMPFILE="$(mktemp 2>/dev/null || echo ./__tmp_mh.sql)"
 printf '%s\n' \
 'CREATE TABLE IF NOT EXISTS _migration_history (' \
@@ -109,9 +102,8 @@ printf '%s\n' \
 apply_file "$TMPFILE"
 rm -f "$TMPFILE"
 
-# ---- apply migrations idempotently ----
+# apply migrations idempotently
 FOUND=0
-# shellcheck disable=SC2012
 for f in $(ls -1 "$MIGRATION_DIR"/*.sql 2>/dev/null | sort); do
   FOUND=1
   FN=$(basename "$f")
