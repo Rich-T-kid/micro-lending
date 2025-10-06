@@ -2,8 +2,13 @@
 FROM alpine:3.20
 RUN apk add --no-cache bash mysql-client ca-certificates
 WORKDIR /app
+
+# copy migrations + scripts
 COPY db/ db/
-# Prefer TLS when hitting Railway's public proxy
+
+# copy start.sh to /app and ensure executable
+COPY start.sh ./start.sh
+RUN chmod +x /app/start.sh /app/db/scripts/migrate.sh
+
 ENV MYSQL_SSL_MODE=REQUIRED
-# On start: run migrations, then idle so the service stays 'healthy'
-CMD ["bash","-lc","bash db/scripts/migrate.sh && echo '✅ Migrations finished' && tail -f /dev/null"]
+CMD ["./start.sh"]
