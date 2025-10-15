@@ -1,14 +1,16 @@
--- 0003_indexes.sql (compat: no "IF NOT EXISTS")
+-- 0003_indexes.sql (MySQL 8 compatible)
 -- Creates indexes only if missing; also defines reporting views.
 
 SET NAMES utf8mb4;
 SET time_zone = '+00:00';
 
--- Helper proc to create an index iff it doesn't exist
+-- Recreate helper proc safely
+DROP PROCEDURE IF EXISTS add_index_if_missing;
+
 DELIMITER $$
 CREATE PROCEDURE add_index_if_missing(
-  IN p_table VARCHAR(64),
-  IN p_index VARCHAR(64),
+  IN p_table   VARCHAR(64),
+  IN p_index   VARCHAR(64),
   IN p_columns VARCHAR(512)
 )
 BEGIN
@@ -43,7 +45,6 @@ CALL add_index_if_missing('institution',        'idx_institution_status',       
 
 CALL add_index_if_missing('wallet_account',     'idx_wallet_currency',             'currency_code');
 CALL add_index_if_missing('wallet_account',     'idx_wallet_status',               'status, created_at');
--- (owner_type, owner_id) already indexed by 0001 as idx_owner
 
 CALL add_index_if_missing('loan_application',   'idx_applicant',                   'applicant_id, created_at');
 CALL add_index_if_missing('loan_application',   'idx_app_status',                  'status, created_at');
@@ -51,7 +52,7 @@ CALL add_index_if_missing('loan_application',   'idx_app_institution',          
 CALL add_index_if_missing('loan_application',   'idx_app_channel',                 'channel, created_at');
 CALL add_index_if_missing('loan_application',   'idx_app_currency',                'currency_code');
 
-CALL add_index_if_missing('risk_assessment',    'idx_risk_app_unique',             'app_id');            -- uniqueness enforced by table def
+CALL add_index_if_missing('risk_assessment',    'idx_risk_app_unique',             'app_id');            -- uniqueness by table def
 CALL add_index_if_missing('risk_assessment',    'idx_risk_score',                  'risk_band, score_numeric');
 
 CALL add_index_if_missing('loan_offer',         'idx_offer_app',                   'app_id, created_at');
@@ -59,14 +60,14 @@ CALL add_index_if_missing('loan_offer',         'idx_offer_status',             
 CALL add_index_if_missing('loan_offer',         'idx_offer_lender',                'lender_type, lender_id');
 CALL add_index_if_missing('loan_offer',         'idx_offer_currency',              'currency_code');
 
-CALL add_index_if_missing('loan',               'idx_loan_app_unique',             'app_id');            -- uniqueness enforced by table def
-CALL add_index_if_missing('loan',               'idx_loan_offer_unique',           'offer_id');          -- uniqueness enforced by table def
+CALL add_index_if_missing('loan',               'idx_loan_app_unique',             'app_id');            -- uniqueness by table def
+CALL add_index_if_missing('loan',               'idx_loan_offer_unique',           'offer_id');          -- uniqueness by table def
 CALL add_index_if_missing('loan',               'idx_loan_borrower',               'borrower_id, status');
 CALL add_index_if_missing('loan',               'idx_loan_lender',                 'lender_type, lender_id, status');
 CALL add_index_if_missing('loan',               'idx_loan_dates',                  'start_date, maturity_date');
 CALL add_index_if_missing('loan',               'idx_loan_currency',               'currency_code');
 
-CALL add_index_if_missing('repayment_schedule', 'idx_sched_unique_installment',    'loan_id, installment_no'); -- uniq by table def
+CALL add_index_if_missing('repayment_schedule', 'idx_sched_unique_installment',    'loan_id, installment_no');
 CALL add_index_if_missing('repayment_schedule', 'idx_sched_due',                   'loan_id, due_date');
 CALL add_index_if_missing('repayment_schedule', 'idx_sched_status',                'status, due_date');
 
@@ -87,7 +88,7 @@ CALL add_index_if_missing('transaction_ledger', 'idx_ledger_account_time',      
 CALL add_index_if_missing('transaction_ledger', 'idx_ledger_related',              'related_type, related_id');
 CALL add_index_if_missing('transaction_ledger', 'idx_ledger_currency',             'currency_code');
 
-CALL add_index_if_missing('delinquency_report', 'idx_delinquency_unique',          'loan_id, snapshot_date'); -- uniq by table def
+CALL add_index_if_missing('delinquency_report', 'idx_delinquency_unique',          'loan_id, snapshot_date');
 CALL add_index_if_missing('delinquency_report', 'idx_delinquency_status',          'status, days_past_due');
 
 CALL add_index_if_missing('message_thread',     'idx_thread_app',                  'app_id');
@@ -95,7 +96,7 @@ CALL add_index_if_missing('message_thread',     'idx_thread_creator',           
 
 CALL add_index_if_missing('message',            'idx_message_thread_time',         'thread_id, created_at');
 
-CALL add_index_if_missing('rating_review',      'idx_rating_unique_pair',          'reviewer_id, reviewee_id'); -- uniq by table def
+CALL add_index_if_missing('rating_review',      'idx_rating_unique_pair',          'reviewer_id, reviewee_id');
 CALL add_index_if_missing('rating_review',      'idx_rating_reviewee_time',        'reviewee_id, created_at');
 
 CALL add_index_if_missing('audit_log',          'idx_audit_entity',                'entity_type, entity_id');
@@ -182,11 +183,11 @@ LEFT JOIN (
     FROM delinquency_report
     GROUP BY loan_id
   ) d2
-  ON d1.loan_id = d2.loan_id AND d1.snapshot_date = d2.max_date
+    ON d1.loan_id = d2.loan_id AND d1.snapshot_date = d2.max_date
 ) dr
-ON dr.loan_id = l.loan_id;
+  ON dr.loan_id = l.loan_id;
 
--- Latest message per thread (MySQL: use scalar subquery for portability)
+-- Latest message per thread
 CREATE OR REPLACE VIEW v_thread_latest_message AS
 SELECT
   t.thread_id,

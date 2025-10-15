@@ -3,14 +3,16 @@
 
 SET NAMES utf8mb4;
 SET time_zone = '+00:00';
--- ==========================================================
+
+START TRANSACTION;
+
 INSERT INTO role (role_id, role_name) VALUES
   (1, 'BORROWER'),
   (2, 'LENDER'),
   (3, 'ADMIN')
 ON DUPLICATE KEY UPDATE
   role_name = VALUES(role_name);
--- ==========================================================
+
 INSERT INTO currency (currency_code, name, decimals) VALUES
   ('USD', 'US Dollar', 2),
   ('EUR', 'Euro', 2),
@@ -22,3 +24,5 @@ INSERT INTO currency (currency_code, name, decimals) VALUES
 ON DUPLICATE KEY UPDATE
   name = VALUES(name),
   decimals = VALUES(decimals);
+
+COMMIT;
