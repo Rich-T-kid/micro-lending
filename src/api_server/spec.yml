@@ -1,0 +1,3098 @@
+openapi: 3.0.3
+info:
+  title: Microlending Platform API
+  description: |
+    Comprehensive API for a microlending platform supporting borrowers, lenders, and administrative operations.
+    
+    ## Key Features
+    - Identity verification and KYC compliance
+    - Loan application and approval workflows
+    - Risk assessment and credit scoring
+    - Portfolio management for lenders
+    - Real-time transaction processing
+    - Administrative oversight and compliance tools
+    
+    ## Authentication
+    All endpoints require JWT authentication unless otherwise specified.
+    Use the `/auth/login` endpoint to obtain access tokens.
+  version: 1.0.0
+  contact:
+    name: API Support
+    email: api-support@microlending.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: https://localhost/v1
+    description: test server
+
+security:
+  - BearerAuth: []
+
+paths:
+  # Authentication Endpoints
+  /auth/login:
+    post:
+      tags: [Authentication]
+      summary: User login
+      description: Authenticate user and return JWT token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  format: password
+      responses:
+        '200':
+          description: Successful authentication
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                  refresh_token:
+                    type: string
+                  expires_in:
+                    type: integer
+                  user_id:
+                    type: string
+                    format: uuid
+                  roles:
+                    type: array
+                    items:
+                      type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/refresh:
+    post:
+      tags: [Authentication]
+      summary: Refresh access token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token:
+                  type: string
+      responses:
+        '200':
+          description: New access token generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                  expires_in:
+                    type: integer
+
+  # User Management Endpoints
+  /users:
+    post:
+      tags: [User Management]
+      summary: Create new user account
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserRequest'
+      responses:
+        '201':
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: User already exists
+
+    get:
+      tags: [User Management]
+      summary: List users (Admin only)
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [active, inactive, suspended]
+        - name: role
+          in: query
+          schema:
+            type: string
+            enum: [borrower, lender, admin]
+      responses:
+        '200':
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/User'
+                  pagination:
+                    $ref: '#/components/schemas/PaginationInfo'
+
+  /users/{userId}:
+    get:
+      tags: [User Management]
+      summary: Get user profile
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags: [User Management]
+      summary: Update user profile
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserRequest'
+      responses:
+        '200':
+          description: User updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+
+    delete:
+      tags: [User Management]
+      summary: Deactivate user account (Admin only)
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: User deactivated successfully
+
+  # KYC and Identity Verification
+  /users/{userId}/kyc:
+    post:
+      tags: [Identity Verification]
+      summary: Submit KYC documents
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [government_id_type, id_document, address_proof]
+              properties:
+                government_id_type:
+                  type: string
+                  enum: [passport, drivers_license, national_id, voter_id]
+                id_document:
+                  type: string
+                  format: binary
+                address_proof:
+                  type: string
+                  format: binary
+                address_line_1:
+                  type: string
+                address_line_2:
+                  type: string
+                city:
+                  type: string
+                state:
+                  type: string
+                postal_code:
+                  type: string
+                country:
+                  type: string
+      responses:
+        '201':
+          description: KYC documents submitted for verification
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KYCIdentity'
+
+    get:
+      tags: [Identity Verification]
+      summary: Get KYC status
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: KYC verification status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KYCIdentity'
+
+  # Wallet and Account Management
+  /users/{userId}/accounts:
+    get:
+      tags: [Wallet Management]
+      summary: Get user wallet accounts
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: User wallet accounts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WalletAccount'
+
+    post:
+      tags: [Wallet Management]
+      summary: Create new wallet account
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [currency_code]
+              properties:
+                currency_code:
+                  type: string
+                  example: "USD"
+      responses:
+        '201':
+          description: Wallet account created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WalletAccount'
+
+  /accounts/{accountId}/transactions:
+    get:
+      tags: [Wallet Management]
+      summary: Get account transaction history
+      parameters:
+        - name: accountId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: transaction_type
+          in: query
+          schema:
+            type: string
+            enum: [deposit, withdrawal, loan_disbursement, loan_repayment, fee, interest]
+      responses:
+        '200':
+          description: Transaction history
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Transaction'
+                  pagination:
+                    $ref: '#/components/schemas/PaginationInfo'
+
+  # Loan Application Endpoints
+  /loan-applications:
+    post:
+      tags: [Loan Applications]
+      summary: Submit loan application
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateLoanApplicationRequest'
+      responses:
+        '201':
+          description: Loan application submitted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoanApplication'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+    get:
+      tags: [Loan Applications]
+      summary: List loan applications
+      parameters:
+        - name: applicant_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, under_review, approved, rejected, withdrawn]
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: List of loan applications
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/LoanApplication'
+                  pagination:
+                    $ref: '#/components/schemas/PaginationInfo'
+
+  /loan-applications/{applicationId}:
+    get:
+      tags: [Loan Applications]
+      summary: Get loan application details
+      parameters:
+        - name: applicationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Loan application details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoanApplicationDetails'
+
+    put:
+      tags: [Loan Applications]
+      summary: Update loan application (before approval)
+      parameters:
+        - name: applicationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateLoanApplicationRequest'
+      responses:
+        '200':
+          description: Application updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoanApplication'
+
+  /loan-applications/{applicationId}/risk-assessment:
+    get:
+      tags: [Risk Assessment]
+      summary: Get risk assessment for loan application
+      parameters:
+        - name: applicationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Risk assessment details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RiskAssessment'
+
+    post:
+      tags: [Risk Assessment]
+      summary: Generate risk assessment (Admin only)
+      parameters:
+        - name: applicationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                model_version:
+                  type: string
+                  default: "v2.1"
+                force_refresh:
+                  type: boolean
+                  default: false
+      responses:
+        '201':
+          description: Risk assessment generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RiskAssessment'
+
+  # Loan Offers and Management
+  /loan-applications/{applicationId}/offers:
+    get:
+      tags: [Loan Offers]
+      summary: Get loan offers for application
+      parameters:
+        - name: applicationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Available loan offers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/LoanOffer'
+
+    post:
+      tags: [Loan Offers]
+      summary: Create loan offer (Lender/Admin)
+      parameters:
+        - name: applicationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateLoanOfferRequest'
+      responses:
+        '201':
+          description: Loan offer created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoanOffer'
+
+  /loan-offers/{offerId}/accept:
+    post:
+      tags: [Loan Offers]
+      summary: Accept loan offer (Borrower)
+      parameters:
+        - name: offerId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Loan offer accepted, loan created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Loan'
+
+  # Active Loans Management
+  /loans:
+    get:
+      tags: [Loans]
+      summary: List loans
+      parameters:
+        - name: borrower_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: lender_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [active, completed, defaulted, written_off]
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: List of loans
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Loan'
+                  pagination:
+                    $ref: '#/components/schemas/PaginationInfo'
+
+  /loans/{loanId}:
+    get:
+      tags: [Loans]
+      summary: Get loan details
+      parameters:
+        - name: loanId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Loan details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoanDetails'
+
+  /loans/{loanId}/schedule:
+    get:
+      tags: [Loans]
+      summary: Get loan repayment schedule
+      parameters:
+        - name: loanId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Repayment schedule
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RepaymentSchedule'
+
+  /loans/{loanId}/payments:
+    get:
+      tags: [Loan Payments]
+      summary: Get loan payment history
+      parameters:
+        - name: loanId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Payment history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Repayment'
+
+    post:
+      tags: [Loan Payments]
+      summary: Make loan payment
+      parameters:
+        - name: loanId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount, origin_account_id]
+              properties:
+                amount:
+                  type: number
+                  format: decimal
+                  minimum: 0.01
+                origin_account_id:
+                  type: string
+                  format: uuid
+                payment_method:
+                  type: string
+                  enum: [wallet, bank_transfer, mobile_money, card]
+                  default: wallet
+      responses:
+        '201':
+          description: Payment processed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Repayment'
+
+  # Portfolio Management (Lenders)
+  /portfolio/summary:
+    get:
+      tags: [Portfolio Management]
+      summary: Get lender portfolio summary
+      responses:
+        '200':
+          description: Portfolio summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortfolioSummary'
+
+  /portfolio/loans:
+    get:
+      tags: [Portfolio Management]
+      summary: Get lender's loan portfolio
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [active, completed, defaulted]
+        - name: risk_grade
+          in: query
+          schema:
+            type: string
+            enum: [A, B, C, D, E]
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Lender's loan portfolio
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PortfolioLoan'
+                  pagination:
+                    $ref: '#/components/schemas/PaginationInfo'
+
+  # Auto-lending Configuration
+  /auto-lending/config:
+    get:
+      tags: [Auto-lending]
+      summary: Get auto-lending configuration
+      responses:
+        '200':
+          description: Auto-lending configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AutoLendingConfig'
+
+    put:
+      tags: [Auto-lending]
+      summary: Update auto-lending configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAutoLendingConfigRequest'
+      responses:
+        '200':
+          description: Configuration updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AutoLendingConfig'
+
+  # Messaging System
+  /messages/threads:
+    get:
+      tags: [Messaging]
+      summary: Get message threads
+      parameters:
+        - name: application_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Message threads
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MessageThread'
+
+    post:
+      tags: [Messaging]
+      summary: Create message thread
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [application_id, initial_message]
+              properties:
+                application_id:
+                  type: string
+                  format: uuid
+                initial_message:
+                  type: string
+      responses:
+        '201':
+          description: Thread created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageThread'
+
+  /messages/threads/{threadId}/messages:
+    get:
+      tags: [Messaging]
+      summary: Get messages in thread
+      parameters:
+        - name: threadId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Messages in thread
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Message'
+
+    post:
+      tags: [Messaging]
+      summary: Send message
+      parameters:
+        - name: threadId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body_text]
+              properties:
+                body_text:
+                  type: string
+      responses:
+        '201':
+          description: Message sent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+
+  # Ratings and Reviews
+  /ratings:
+    post:
+      tags: [Ratings]
+      summary: Submit rating and review
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRatingRequest'
+      responses:
+        '201':
+          description: Rating submitted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Rating'
+
+  /users/{userId}/ratings:
+    get:
+      tags: [Ratings]
+      summary: Get user ratings
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: as_reviewer
+          in: query
+          description: Get ratings given by this user
+          schema:
+            type: boolean
+            default: false
+        - name: as_reviewee
+          in: query
+          description: Get ratings received by this user
+          schema:
+            type: boolean
+            default: true
+      responses:
+        '200':
+          description: User ratings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Rating'
+
+  # Administrative Endpoints
+  /admin/dashboard:
+    get:
+      tags: [Admin Dashboard]
+      summary: Get admin dashboard data
+      responses:
+        '200':
+          description: Dashboard metrics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminDashboard'
+
+  /admin/loans/approval:
+    get:
+      tags: [Admin Loan Management]
+      summary: Get loans pending manual review
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Loans pending review
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/LoanApplicationDetails'
+                  pagination:
+                    $ref: '#/components/schemas/PaginationInfo'
+
+  /admin/loans/{loanId}/approve:
+    post:
+      tags: [Admin Loan Management]
+      summary: Manually approve loan application
+      parameters:
+        - name: loanId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                notes:
+                  type: string
+                conditions:
+                  type: string
+      responses:
+        '200':
+          description: Loan approved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoanApplication'
+
+  /admin/loans/{loanId}/reject:
+    post:
+      tags: [Admin Loan Management]
+      summary: Reject loan application
+      parameters:
+        - name: loanId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason:
+                  type: string
+                notes:
+                  type: string
+      responses:
+        '200':
+          description: Loan rejected
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoanApplication'
+
+  /admin/delinquency:
+    get:
+      tags: [Admin Risk Management]
+      summary: Get delinquency reports
+      parameters:
+        - name: days_past_due
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Delinquency reports
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DelinquencyReport'
+                  pagination:
+                    $ref: '#/components/schemas/PaginationInfo'
+
+  /admin/transactions:
+    get:
+      tags: [Admin Financial Operations]
+      summary: Monitor all platform transactions
+      parameters:
+        - name: transaction_type
+          in: query
+          schema:
+            type: string
+            enum: [deposit, withdrawal, loan_disbursement, loan_repayment, fee, interest]
+        - name: amount_min
+          in: query
+          schema:
+            type: number
+            format: decimal
+        - name: amount_max
+          in: query
+          schema:
+            type: number
+            format: decimal
+        - name: date_from
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: date_to
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Transaction list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Transaction'
+                  pagination:
+                    $ref: '#/components/schemas/PaginationInfo'
+
+  /admin/fraud-alerts:
+    get:
+      tags: [Admin Compliance]
+      summary: Get fraud detection alerts
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [open, investigating, resolved, false_positive]
+        - name: severity
+          in: query
+          schema:
+            type: string
+            enum: [low, medium, high, critical]
+      responses:
+        '200':
+          description: Fraud alerts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FraudAlert'
+
+  /admin/audit-logs:
+    get:
+      tags: [Admin Compliance]
+      summary: Get audit trail logs
+      parameters:
+        - name: actor_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: action
+          in: query
+          schema:
+            type: string
+        - name: entity_type
+          in: query
+          schema:
+            type: string
+        - name: date_from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: date_to
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Audit logs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AuditLog'
+                  pagination:
+                    $ref: '#/components/schemas/PaginationInfo'
+
+  # Reporting Endpoints
+  /reports/platform-metrics:
+    get:
+      tags: [Reporting]
+      summary: Get platform performance metrics
+      parameters:
+        - name: period
+          in: query
+          schema:
+            type: string
+            enum: [daily, weekly, monthly, quarterly, yearly]
+            default: monthly
+        - name: date_from
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: date_to
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Platform metrics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformMetrics'
+
+  /reports/revenue:
+    get:
+      tags: [Reporting]
+      summary: Generate revenue reports
+      parameters:
+        - name: breakdown_by
+          in: query
+          schema:
+            type: string
+            enum: [month, quarter, year, product_type, geography]
+            default: month
+      responses:
+        '200':
+          description: Revenue report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RevenueReport'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Forbidden
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details:
+              type: object
+        timestamp:
+          type: string
+          format: date-time
+        request_id:
+          type: string
+
+    PaginationInfo:
+      type: object
+      properties:
+        page:
+          type: integer
+        limit:
+          type: integer
+        total_pages:
+          type: integer
+        total_count:
+          type: integer
+        has_next:
+          type: boolean
+        has_prev:
+          type: boolean
+
+    # User Management Schemas
+    CreateUserRequest:
+      type: object
+      required: [first_name, last_name, email, phone, birthdate, password]
+      properties:
+        first_name:
+          type: string
+          maxLength: 100
+        last_name:
+          type: string
+          maxLength: 100
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+          pattern: '^[\+]?[0-9\s\-\(\)]+$'
+
+        birthdate:
+          type: string
+          format: date
+        password:
+          type: string
+          format: password
+          minLength: 8
+        preferred_language:
+          type: string
+          enum: [en, es, fr, pt]
+          default: en
+        marketing_consent:
+          type: boolean
+          default: false
+
+    UpdateUserRequest:
+      type: object
+      properties:
+        first_name:
+          type: string
+          maxLength: 100
+        last_name:
+          type: string
+          maxLength: 100
+        phone:
+          type: string
+          pattern: '^[\+]?[0-9\s\-\(\)]+$'
+
+        preferred_language:
+          type: string
+          enum: [en, es, fr, pt]
+        marketing_consent:
+          type: boolean
+
+    User:
+      type: object
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        first_name:
+          type: string
+        last_name:
+          type: string
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+        birthdate:
+          type: string
+          format: date
+        activity_status:
+          type: string
+          enum: [active, inactive, suspended, pending_verification]
+        date_created:
+          type: string
+          format: date-time
+        last_login:
+          type: string
+          format: date-time
+        roles:
+          type: array
+          items:
+            type: string
+            enum: [borrower, lender, admin]
+        kyc_status:
+          type: string
+          enum: [not_started, pending, verified, rejected]
+        credit_score:
+          type: integer
+          minimum: 300
+          maximum: 850
+        total_borrowed:
+          type: number
+          format: decimal
+        total_lent:
+          type: number
+          format: decimal
+        default_rate:
+          type: number
+          format: decimal
+          minimum: 0
+          maximum: 1
+
+    # KYC and Identity Verification Schemas
+    KYCIdentity:
+      type: object
+      properties:
+        kyc_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        government_id_type:
+          type: string
+          enum: [passport, drivers_license, national_id, voter_id]
+        government_id_hash:
+          type: string
+          description: Hashed version of government ID number
+        address_line_1:
+          type: string
+        address_line_2:
+          type: string
+        city:
+          type: string
+        state:
+          type: string
+        postal_code:
+          type: string
+        country:
+          type: string
+        verification_status:
+          type: string
+          enum: [pending, verified, rejected, expired]
+        verification_date:
+          type: string
+          format: date-time
+        rejection_reason:
+          type: string
+        documents_uploaded:
+          type: array
+          items:
+            type: object
+            properties:
+              document_type:
+                type: string
+              upload_date:
+                type: string
+                format: date-time
+              verification_status:
+                type: string
+                enum: [pending, verified, rejected]
+
+    # Wallet and Account Schemas
+    WalletAccount:
+      type: object
+      properties:
+        account_id:
+          type: string
+          format: uuid
+        owner_type:
+          type: string
+          enum: [user, institution]
+        owner_id:
+          type: string
+          format: uuid
+        currency_code:
+          type: string
+          example: USD
+        available_balance:
+          type: number
+          format: decimal
+        hold_balance:
+          type: number
+          format: decimal
+          description: Amount temporarily held for pending transactions
+        total_balance:
+          type: number
+          format: decimal
+          description: Available + Hold balance
+        activity_status:
+          type: string
+          enum: [active, frozen, closed]
+        date_created:
+          type: string
+          format: date-time
+
+    Transaction:
+      type: object
+      properties:
+        tx_id:
+          type: string
+          format: uuid
+        transaction_type:
+          type: string
+          enum: [deposit, withdrawal, loan_disbursement, loan_repayment, fee, interest, transfer]
+        related_id:
+          type: string
+          format: uuid
+          description: ID of related loan, application, or other entity
+        account_id:
+          type: string
+          format: uuid
+        debit_amount:
+          type: number
+          format: decimal
+        credit_amount:
+          type: number
+          format: decimal
+        currency_code:
+          type: string
+        balance_after:
+          type: number
+          format: decimal
+        memo:
+          type: string
+        posted_by:
+          type: string
+          format: uuid
+        date_created:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [pending, completed, failed, reversed]
+
+    # Loan Application Schemas
+    CreateLoanApplicationRequest:
+      type: object
+      required: [requested_amount, currency_code, purpose, term_months]
+      properties:
+        requested_amount:
+          type: number
+          format: decimal
+          minimum: 25
+          maximum: 5000
+        currency_code:
+          type: string
+          example: USD
+        purpose:
+          type: string
+          enum: [business_expansion, education, home_improvement, medical, agriculture, emergency, debt_consolidation, other]
+        purpose_description:
+          type: string
+          maxLength: 500
+        term_months:
+          type: integer
+          minimum: 1
+          maximum: 60
+        collateral_flag:
+          type: boolean
+          default: false
+        collateral_description:
+          type: string
+          maxLength: 500
+        target_institution_id:
+          type: string
+          format: uuid
+          description: Preferred lending institution (optional)
+        employment_status:
+          type: string
+          enum: [employed, self_employed, unemployed, student, retired]
+        monthly_income:
+          type: number
+          format: decimal
+        monthly_expenses:
+          type: number
+          format: decimal
+        existing_debt:
+          type: number
+          format: decimal
+        business_revenue:
+          type: number
+          format: decimal
+        notes:
+          type: string
+          maxLength: 1000
+
+    UpdateLoanApplicationRequest:
+      type: object
+      properties:
+        requested_amount:
+          type: number
+          format: decimal
+          minimum: 25
+          maximum: 5000
+        purpose:
+          type: string
+          enum: [business_expansion, education, home_improvement, medical, agriculture, emergency, debt_consolidation, other]
+        purpose_description:
+          type: string
+          maxLength: 500
+        term_months:
+          type: integer
+          minimum: 1
+          maximum: 60
+        collateral_flag:
+          type: boolean
+        collateral_description:
+          type: string
+          maxLength: 500
+        employment_status:
+          type: string
+          enum: [employed, self_employed, unemployed, student, retired]
+        monthly_income:
+          type: number
+          format: decimal
+        monthly_expenses:
+          type: number
+          format: decimal
+        existing_debt:
+          type: number
+          format: decimal
+        business_revenue:
+          type: number
+          format: decimal
+        notes:
+          type: string
+          maxLength: 1000
+
+    LoanApplication:
+      type: object
+      properties:
+        application_id:
+          type: string
+          format: uuid
+        applicant_id:
+          type: string
+          format: uuid
+        receiving_from:
+          type: string
+          enum: [individual, institution, platform]
+        target_institution_id:
+          type: string
+          format: uuid
+        requested_amount:
+          type: number
+          format: decimal
+        currency_code:
+          type: string
+        purpose:
+          type: string
+        purpose_description:
+          type: string
+        term_months:
+          type: integer
+        collateral_flag:
+          type: boolean
+        collateral_description:
+          type: string
+        employment_status:
+          type: string
+        monthly_income:
+          type: number
+          format: decimal
+        monthly_expenses:
+          type: number
+          format: decimal
+        existing_debt:
+          type: number
+          format: decimal
+        business_revenue:
+          type: number
+          format: decimal
+        notes:
+          type: string
+        process_status:
+          type: string
+          enum: [draft, submitted, under_review, risk_assessed, approved, rejected, withdrawn, funded]
+        date_created:
+          type: string
+          format: date-time
+        date_updated:
+          type: string
+          format: date-time
+
+    LoanApplicationDetails:
+      allOf:
+        - $ref: '#/components/schemas/LoanApplication'
+        - type: object
+          properties:
+            applicant:
+              $ref: '#/components/schemas/User'
+            risk_assessment:
+              $ref: '#/components/schemas/RiskAssessment'
+            offers:
+              type: array
+              items:
+                $ref: '#/components/schemas/LoanOffer'
+
+    # Risk Assessment Schemas
+    RiskAssessment:
+      type: object
+      properties:
+        risk_id:
+          type: string
+          format: uuid
+        application_id:
+          type: string
+          format: uuid
+        model_version:
+          type: string
+        score:
+          type: integer
+          minimum: 0
+          maximum: 1000
+        risk_grade:
+          type: string
+          enum: [A, B, C, D, E, F]
+        dti_ratio:
+          type: number
+          format: decimal
+          description: Debt-to-income ratio
+        verified_income:
+          type: boolean
+        recommendation:
+          type: string
+          enum: [approve, approve_with_conditions, manual_review, reject]
+        risk_factors:
+          type: array
+          items:
+            type: object
+            properties:
+              factor:
+                type: string
+              impact:
+                type: string
+                enum: [positive, negative, neutral]
+              weight:
+                type: number
+                format: decimal
+        alternative_data_score:
+          type: integer
+          minimum: 0
+          maximum: 100
+        credit_bureau_score:
+          type: integer
+          minimum: 300
+          maximum: 850
+        date_assessed:
+          type: string
+          format: date-time
+
+    # Loan Offer Schemas
+    CreateLoanOfferRequest:
+      type: object
+      required: [principal_amount, currency_code, interest_apr, term_months, repayment_type]
+      properties:
+        principal_amount:
+          type: number
+          format: decimal
+          minimum: 25
+        currency_code:
+          type: string
+        interest_apr:
+          type: number
+          format: decimal
+          minimum: 0
+          maximum: 100
+        repayment_type:
+          type: string
+          enum: [equal_installments, interest_only, bullet, flexible]
+        term_months:
+          type: integer
+          minimum: 1
+          maximum: 60
+        grace_periods:
+          type: integer
+          minimum: 0
+          maximum: 6
+          description: Number of grace periods allowed
+        origination_fee:
+          type: number
+          format: decimal
+          minimum: 0
+        processing_fee:
+          type: number
+          format: decimal
+          minimum: 0
+        late_payment_fee:
+          type: number
+          format: decimal
+          minimum: 0
+        percentage_fees:
+          type: array
+          items:
+            type: object
+            properties:
+              fee_type:
+                type: string
+              percentage:
+                type: number
+                format: decimal
+        extra_conditions:
+          type: string
+          maxLength: 1000
+        offer_expires_at:
+          type: string
+          format: date-time
+
+    LoanOffer:
+      type: object
+      properties:
+        offer_id:
+          type: string
+          format: uuid
+        application_id:
+          type: string
+          format: uuid
+        lender_type:
+          type: string
+          enum: [individual, institution, platform_pool]
+        lender_id:
+          type: string
+          format: uuid
+        principal_amount:
+          type: number
+          format: decimal
+        currency_code:
+          type: string
+        interest_apr:
+          type: number
+          format: decimal
+        repayment_type:
+          type: string
+          enum: [equal_installments, interest_only, bullet, flexible]
+        term_months:
+          type: integer
+        grace_periods:
+          type: integer
+        origination_fee:
+          type: number
+          format: decimal
+        processing_fee:
+          type: number
+          format: decimal
+        late_payment_fee:
+          type: number
+          format: decimal
+        flat_fees:
+          type: array
+          items:
+            type: object
+            properties:
+              fee_type:
+                type: string
+              amount:
+                type: number
+                format: decimal
+        percentage_fees:
+          type: array
+          items:
+            type: object
+            properties:
+              fee_type:
+                type: string
+              percentage:
+                type: number
+                format: decimal
+        extra_conditions:
+          type: string
+        total_repayment_amount:
+          type: number
+          format: decimal
+          description: Total amount to be repaid including interest and fees
+        monthly_payment:
+          type: number
+          format: decimal
+          description: Estimated monthly payment
+        offer_status:
+          type: string
+          enum: [active, accepted, expired, withdrawn]
+        offer_expires_at:
+          type: string
+          format: date-time
+        date_created:
+          type: string
+          format: date-time
+        lender_profile:
+          type: object
+          properties:
+            name:
+              type: string
+            rating:
+              type: number
+              format: decimal
+              minimum: 0
+              maximum: 5
+            total_loans:
+              type: integer
+            success_rate:
+              type: number
+              format: decimal
+
+    # Active Loan Schemas
+    Loan:
+      type: object
+      properties:
+        loan_id:
+          type: string
+          format: uuid
+        application_id:
+          type: string
+          format: uuid
+        offer_id:
+          type: string
+          format: uuid
+        borrower_id:
+          type: string
+          format: uuid
+        lender_type:
+          type: string
+          enum: [individual, institution, platform_pool]
+        lender_id:
+          type: string
+          format: uuid
+        principal_amount:
+          type: number
+          format: decimal
+        currency_code:
+          type: string
+        interest_apr:
+          type: number
+          format: decimal
+        origination_fee:
+          type: number
+          format: decimal
+        start_date:
+          type: string
+          format: date
+        maturity_date:
+          type: string
+          format: date
+        loan_status:
+          type: string
+          enum: [funding, active, completed, defaulted, written_off]
+        outstanding_balance:
+          type: number
+          format: decimal
+        total_paid:
+          type: number
+          format: decimal
+        next_payment_due:
+          type: string
+          format: date
+        next_payment_amount:
+          type: number
+          format: decimal
+        days_past_due:
+          type: integer
+          minimum: 0
+        date_created:
+          type: string
+          format: date-time
+
+    LoanDetails:
+      allOf:
+        - $ref: '#/components/schemas/Loan'
+        - type: object
+          properties:
+            borrower:
+              type: object
+              properties:
+                user_id:
+                  type: string
+                  format: uuid
+                first_name:
+                  type: string
+                last_name:
+                  type: string
+                credit_score:
+                  type: integer
+                rating:
+                  type: number
+                  format: decimal
+            lender:
+              type: object
+              properties:
+                user_id:
+                  type: string
+                  format: uuid
+                first_name:
+                  type: string
+                last_name:
+                  type: string
+                institution_name:
+                  type: string
+                rating:
+                  type: number
+                  format: decimal
+            repayment_schedule:
+              type: array
+              items:
+                $ref: '#/components/schemas/RepaymentSchedule'
+            payment_history:
+              type: array
+              items:
+                $ref: '#/components/schemas/Repayment'
+
+    # Repayment Schemas
+    RepaymentSchedule:
+      type: object
+      properties:
+        schedule_id:
+          type: string
+          format: uuid
+        loan_id:
+          type: string
+          format: uuid
+        installment_number:
+          type: integer
+        due_date:
+          type: string
+          format: date
+        due_principal:
+          type: number
+          format: decimal
+        due_interest:
+          type: number
+          format: decimal
+        due_fees:
+          type: number
+          format: decimal
+        total_due:
+          type: number
+          format: decimal
+        status:
+          type: string
+          enum: [pending, paid, overdue, partially_paid]
+        date_paid:
+          type: string
+          format: date-time
+        amount_paid:
+          type: number
+          format: decimal
+
+    Repayment:
+      type: object
+      properties:
+        payment_id:
+          type: string
+          format: uuid
+        loan_id:
+          type: string
+          format: uuid
+        origin_account_id:
+          type: string
+          format: uuid
+        destination_account_id:
+          type: string
+          format: uuid
+        amount:
+          type: number
+          format: decimal
+        currency_code:
+          type: string
+        payment_method:
+          type: string
+          enum: [wallet, bank_transfer, mobile_money, card]
+        date_created:
+          type: string
+          format: date-time
+        date_processed:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [pending, processing, completed, failed, reversed]
+        failure_reason:
+          type: string
+        allocations:
+          type: array
+          items:
+            type: object
+            properties:
+              allocation_id:
+                type: string
+                format: uuid
+              schedule_id:
+                type: string
+                format: uuid
+              to_principal:
+                type: number
+                format: decimal
+              to_interest:
+                type: number
+                format: decimal
+              to_fees:
+                type: number
+                format: decimal
+
+    # Portfolio Management Schemas
+    PortfolioSummary:
+      type: object
+      properties:
+        total_invested:
+          type: number
+          format: decimal
+        available_balance:
+          type: number
+          format: decimal
+        outstanding_principal:
+          type: number
+          format: decimal
+        total_interest_earned:
+          type: number
+          format: decimal
+        total_fees_earned:
+          type: number
+          format: decimal
+        active_loans_count:
+          type: integer
+        completed_loans_count:
+          type: integer
+        defaulted_loans_count:
+          type: integer
+        weighted_average_apr:
+          type: number
+          format: decimal
+        portfolio_default_rate:
+          type: number
+          format: decimal
+        diversification_score:
+          type: number
+          format: decimal
+          minimum: 0
+          maximum: 100
+        risk_distribution:
+          type: object
+          properties:
+            grade_A:
+              type: number
+              format: decimal
+            grade_B:
+              type: number
+              format: decimal
+            grade_C:
+              type: number
+              format: decimal
+            grade_D:
+              type: number
+              format: decimal
+            grade_E:
+              type: number
+              format: decimal
+
+    PortfolioLoan:
+      type: object
+      properties:
+        loan_id:
+          type: string
+          format: uuid
+        borrower_name:
+          type: string
+        principal_amount:
+          type: number
+          format: decimal
+        outstanding_balance:
+          type: number
+          format: decimal
+        interest_apr:
+          type: number
+          format: decimal
+        risk_grade:
+          type: string
+        loan_status:
+          type: string
+        start_date:
+          type: string
+          format: date
+        maturity_date:
+          type: string
+          format: date
+        next_payment_due:
+          type: string
+          format: date
+        days_past_due:
+          type: integer
+        total_interest_earned:
+          type: number
+          format: decimal
+        expected_return:
+          type: number
+          format: decimal
+        borrower_rating:
+          type: number
+          format: decimal
+
+    # Auto-lending Configuration
+    AutoLendingConfig:
+      type: object
+      properties:
+        config_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        enabled:
+          type: boolean
+        total_investment_limit:
+          type: number
+          format: decimal
+        single_loan_limit:
+          type: number
+          format: decimal
+        minimum_loan_amount:
+          type: number
+          format: decimal
+        maximum_loan_amount:
+          type: number
+          format: decimal
+        preferred_risk_grades:
+          type: array
+          items:
+            type: string
+            enum: [A, B, C, D, E]
+        maximum_risk_grade:
+          type: string
+          enum: [A, B, C, D, E]
+        preferred_term_months:
+          type: object
+          properties:
+            min:
+              type: integer
+            max:
+              type: integer
+        geographic_preferences:
+          type: array
+          items:
+            type: string
+        sector_preferences:
+          type: array
+          items:
+            type: string
+        diversification_settings:
+          type: object
+          properties:
+            max_percentage_per_borrower:
+              type: number
+              format: decimal
+            max_percentage_per_sector:
+              type: number
+              format: decimal
+            max_percentage_per_grade:
+              type: number
+              format: decimal
+        date_created:
+          type: string
+          format: date-time
+        date_updated:
+          type: string
+          format: date-time
+
+    UpdateAutoLendingConfigRequest:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        total_investment_limit:
+          type: number
+          format: decimal
+        single_loan_limit:
+          type: number
+          format: decimal
+        minimum_loan_amount:
+          type: number
+          format: decimal
+        maximum_loan_amount:
+          type: number
+          format: decimal
+        preferred_risk_grades:
+          type: array
+          items:
+            type: string
+            enum: [A, B, C, D, E]
+        maximum_risk_grade:
+          type: string
+          enum: [A, B, C, D, E]
+        preferred_term_months:
+          type: object
+          properties:
+            min:
+              type: integer
+            max:
+              type: integer
+        geographic_preferences:
+          type: array
+          items:
+            type: string
+        sector_preferences:
+          type: array
+          items:
+            type: string
+        diversification_settings:
+          type: object
+          properties:
+            max_percentage_per_borrower:
+              type: number
+              format: decimal
+            max_percentage_per_sector:
+              type: number
+              format: decimal
+            max_percentage_per_grade:
+              type: number
+              format: decimal
+
+    # Messaging Schemas
+    MessageThread:
+      type: object
+      properties:
+        thread_id:
+          type: string
+          format: uuid
+        application_id:
+          type: string
+          format: uuid
+        participants:
+          type: array
+          items:
+            type: object
+            properties:
+              user_id:
+                type: string
+                format: uuid
+              name:
+                type: string
+              role:
+                type: string
+        created_by:
+          type: string
+          format: uuid
+        date_created:
+          type: string
+          format: date-time
+        last_message:
+          type: object
+          properties:
+            message_id:
+              type: string
+              format: uuid
+            sender_name:
+              type: string
+            body_text:
+              type: string
+            date_created:
+              type: string
+              format: date-time
+        unread_count:
+          type: integer
+
+    Message:
+      type: object
+      properties:
+        message_id:
+          type: string
+          format: uuid
+        thread_id:
+          type: string
+          format: uuid
+        sender_type:
+          type: string
+          enum: [user, system, admin]
+        sender_id:
+          type: string
+          format: uuid
+        sender_name:
+          type: string
+        body_text:
+          type: string
+        attachments:
+          type: array
+          items:
+            type: object
+            properties:
+              filename:
+                type: string
+              file_url:
+                type: string
+              file_size:
+                type: integer
+        date_created:
+          type: string
+          format: date-time
+        read_by:
+          type: array
+          items:
+            type: object
+            properties:
+              user_id:
+                type: string
+                format: uuid
+              read_at:
+                type: string
+                format: date-time
+
+    # Rating and Review Schemas
+    CreateRatingRequest:
+      type: object
+      required: [reviewee_id, rating]
+      properties:
+        reviewee_id:
+          type: string
+          format: uuid
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        comment:
+          type: string
+          maxLength: 1000
+        transaction_id:
+          type: string
+          format: uuid
+          description: Related loan or transaction ID
+
+    Rating:
+      type: object
+      properties:
+        review_id:
+          type: string
+          format: uuid
+        reviewer_id:
+          type: string
+          format: uuid
+        reviewer_name:
+          type: string
+        reviewee_id:
+          type: string
+          format: uuid
+        reviewee_name:
+          type: string
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        comment:
+          type: string
+        transaction_id:
+          type: string
+          format: uuid
+        date_created:
+          type: string
+          format: date-time
+        verified_transaction:
+          type: boolean
+
+    # Administrative Schemas
+    AdminDashboard:
+      type: object
+      properties:
+        platform_metrics:
+          type: object
+          properties:
+            total_users:
+              type: integer
+            active_users_30d:
+              type: integer
+            total_loans_issued:
+              type: integer
+            total_loan_value:
+              type: number
+              format: decimal
+            active_loans_count:
+              type: integer
+            active_loans_value:
+              type: number
+              format: decimal
+            default_rate:
+              type: number
+              format: decimal
+            average_loan_amount:
+              type: number
+              format: decimal
+            platform_revenue:
+              type: number
+              format: decimal
+        recent_activity:
+          type: object
+          properties:
+            new_applications_24h:
+              type: integer
+            loans_funded_24h:
+              type: integer
+            payments_processed_24h:
+              type: integer
+            new_users_24h:
+              type: integer
+        alerts:
+          type: object
+          properties:
+            fraud_alerts_open:
+              type: integer
+            high_risk_loans:
+              type: integer
+            compliance_issues:
+              type: integer
+            system_issues:
+              type: integer
+        risk_metrics:
+          type: object
+          properties:
+            portfolio_concentration_risk:
+              type: number
+              format: decimal
+            geographic_concentration:
+              type: object
+            sector_concentration:
+              type: object
+            average_credit_score:
+              type: number
+              format: decimal
+
+    DelinquencyReport:
+      type: object
+      properties:
+        report_id:
+          type: string
+          format: uuid
+        loan_id:
+          type: string
+          format: uuid
+        borrower_id:
+          type: string
+          format: uuid
+        borrower_name:
+          type: string
+        principal_amount:
+          type: number
+          format: decimal
+        outstanding_balance:
+          type: number
+          format: decimal
+        days_past_due:
+          type: integer
+        overdue_amount:
+          type: number
+          format: decimal
+        snapshot_date:
+          type: string
+          format: date
+        status:
+          type: string
+          enum: [delinquent, in_collection, resolved, written_off]
+        last_payment_date:
+          type: string
+          format: date
+        contact_attempts:
+          type: integer
+        borrower_contact_info:
+          type: object
+          properties:
+            phone:
+              type: string
+            email:
+              type: string
+            last_known_address:
+              type: string
+
+    FraudAlert:
+      type: object
+      properties:
+        alert_id:
+          type: string
+          format: uuid
+        alert_type:
+          type: string
+          enum: [identity_fraud, payment_fraud, application_fraud, account_takeover]
+        severity:
+          type: string
+          enum: [low, medium, high, critical]
+        user_id:
+          type: string
+          format: uuid
+        related_entity_id:
+          type: string
+          format: uuid
+        related_entity_type:
+          type: string
+          enum: [loan, application, transaction, account]
+        description:
+          type: string
+        risk_score:
+          type: number
+          format: decimal
+          minimum: 0
+          maximum: 100
+        indicators:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+          enum: [open, investigating, resolved, false_positive]
+        assigned_to:
+          type: string
+          format: uuid
+        date_created:
+          type: string
+          format: date-time
+        date_updated:
+          type: string
+          format: date-time
+
+    AuditLog:
+      type: object
+      properties:
+        audit_id:
+          type: string
+          format: uuid
+        actor_id:
+          type: string
+          format: uuid
+        actor_name:
+          type: string
+        actor_type:
+          type: string
+          enum: [user, admin, system]
+        action:
+          type: string
+          enum: [create, update, delete, approve, reject, disburse, repay, suspend, verify]
+        entity_type:
+          type: string
+          enum: [user, loan, application, transaction, account, kyc]
+        entity_id:
+          type: string
+          format: uuid
+        old_values:
+          type: object
+          description: Previous values before the change (JSON)
+        new_values:
+          type: object
+          description: New values after the change (JSON)
+        ip_address:
+          type: string
+        user_agent:
+          type: string
+        date_created:
+          type: string
+          format: date-time
+        additional_context:
+          type: object
+          description: Additional metadata about the action
+
+    # Reporting Schemas
+    PlatformMetrics:
+      type: object
+      properties:
+        reporting_period:
+          type: object
+          properties:
+            start_date:
+              type: string
+              format: date
+            end_date:
+              type: string
+              format: date
+            period_type:
+              type: string
+              enum: [daily, weekly, monthly, quarterly, yearly]
+        user_metrics:
+          type: object
+          properties:
+            new_registrations:
+              type: integer
+            active_users:
+              type: integer
+            verified_users:
+              type: integer
+            user_retention_rate:
+              type: number
+              format: decimal
+        loan_metrics:
+          type: object
+          properties:
+            applications_submitted:
+              type: integer
+            applications_approved:
+              type: integer
+            approval_rate:
+              type: number
+              format: decimal
+            loans_funded:
+              type: integer
+            total_loan_value:
+              type: number
+              format: decimal
+            average_loan_amount:
+              type: number
+              format: decimal
+            average_loan_term:
+              type: number
+              format: decimal
+        repayment_metrics:
+          type: object
+          properties:
+            total_repayments:
+              type: number
+              format: decimal
+            on_time_payment_rate:
+              type: number
+              format: decimal
+            default_rate:
+              type: number
+              format: decimal
+            recovery_rate:
+              type: number
+              format: decimal
+        financial_metrics:
+          type: object
+          properties:
+            gross_revenue:
+              type: number
+              format: decimal
+            net_revenue:
+              type: number
+              format: decimal
+            origination_fees:
+              type: number
+              format: decimal
+            servicing_fees:
+              type: number
+              format: decimal
+            late_fees:
+              type: number
+              format: decimal
+            total_losses:
+              type: number
+              format: decimal
+        risk_metrics:
+          type: object
+          properties:
+            portfolio_yield:
+              type: number
+              format: decimal
+            charge_off_rate:
+              type: number
+              format: decimal
+            loss_rate:
+              type: number
+              format: decimal
+            risk_adjusted_return:
+              type: number
+              format: decimal
+
+    RevenueReport:
+      type: object
+      properties:
+        reporting_period:
+          type: object
+          properties:
+            start_date:
+              type: string
+              format: date
+            end_date:
+              type: string
+              format: date
+        breakdown_by:
+          type: string
+          enum: [month, quarter, year, product_type, geography]
+        revenue_breakdown:
+          type: array
+          items:
+            type: object
+            properties:
+              period:
+                type: string
+              category:
+                type: string
+              gross_revenue:
+                type: number
+                format: decimal
+              fees_collected:
+                type: number
+                format: decimal
+              interest_income:
+                type: number
+                format: decimal
+              penalty_fees:
+                type: number
+                format: decimal
+              net_revenue:
+                type: number
+                format: decimal
+              operating_expenses:
+                type: number
+                format: decimal
+              profit_margin:
+                type: number
+                format: decimal
+        summary:
+          type: object
+          properties:
+            total_gross_revenue:
+              type: number
+              format: decimal
+            total_net_revenue:
+              type: number
+              format: decimal
+            growth_rate:
+              type: number
+              format: decimal
+            year_over_year_change:
+              type: number
+              format: decimal
+
+    # Institution Schemas
+    Institution:
+      type: object
+      properties:
+        institution_id:
+          type: string
+          format: uuid
+        legal_name:
+          type: string
+        classification:
+          type: string
+          enum: [bank, credit_union, mfi, fintech, ngo, government]
+        contact_email:
+          type: string
+          format: email
+        contact_phone:
+          type: string
+        headquarters_address:
+          type: object
+          properties:
+            address_line_1:
+              type: string
+            address_line_2:
+              type: string
+            city:
+              type: string
+            state:
+              type: string
+            postal_code:
+              type: string
+            country:
+              type: string
+        regulatory_licenses:
+          type: array
+          items:
+            type: object
+            properties:
+              license_type:
+                type: string
+              license_number:
+                type: string
+              issuing_authority:
+                type: string
+              issue_date:
+                type: string
+                format: date
+              expiry_date:
+                type: string
+                format: date
+              status:
+                type: string
+                enum: [active, expired, suspended, revoked]
+        activity_status:
+          type: string
+          enum: [active, inactive, suspended, pending_approval]
+        date_created:
+          type: string
+          format: date-time
+        date_verified:
+          type: string
+          format: date-time
+        total_loans_funded:
+          type: integer
+        total_amount_funded:
+          type: number
+          format: decimal
+        average_interest_rate:
+          type: number
+          format: decimal
+        default_rate:
+          type: number
+          format: decimal
+
+    # Currency Schema
+    Currency:
+      type: object
+      properties:
+        currency_code:
+          type: string
+          pattern: '^[A-Z]{3}$'
+          example: USD
+        name:
+          type: string
+          example: US Dollar
+        symbol:
+          type: string
+          example: $
+        decimals:
+          type: integer
+          minimum: 0
+          maximum: 8
+          example: 2
+        is_active:
+          type: boolean
+        exchange_rates:
+          type: object
+          properties:
+            base_currency:
+              type: string
+              example: USD
+            rates:
+              type: object
+              additionalProperties:
+                type: number
+                format: decimal
+            last_updated:
+              type: string
+              format: date-time
+
+    # Disbursement Schema
+    Disbursement:
+      type: object
+      properties:
+        disbursement_id:
+          type: string
+          format: uuid
+        loan_id:
+          type: string
+          format: uuid
+        origin_account_id:
+          type: string
+          format: uuid
+          description: Lender's account
+        destination_account_id:
+          type: string
+          format: uuid
+          description: Borrower's account
+        amount:
+          type: number
+          format: decimal
+        currency_code:
+          type: string
+        disbursement_method:
+          type: string
+          enum: [wallet_transfer, bank_transfer, mobile_money, check, cash]
+        expected_arrival_date:
+          type: string
+          format: date-time
+        actual_arrival_date:
+          type: string
+          format: date-time
+        date_created:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [pending, processing, completed, failed, cancelled]
+        failure_reason:
+          type: string
+        transaction_reference:
+          type: string
+        fees_charged:
+          type: number
+          format: decimal
+
+tags:
+  - name: Authentication
+    description: User authentication and token management
+  - name: User Management
+    description: User account creation, profile management, and user operations
+  - name: Identity Verification
+    description: KYC processes and identity verification workflows
+  - name: Wallet Management
+    description: Digital wallet accounts and transaction management
+  - name: Loan Applications
+    description: Loan application submission and management
+  - name: Risk Assessment
+    description: Credit scoring and risk evaluation
+  - name: Loan Offers
+    description: Loan offer creation, management, and acceptance
+  - name: Loans
+    description: Active loan management and monitoring
+  - name: Loan Payments
+    description: Loan repayment processing and history
+  - name: Portfolio Management
+    description: Lender portfolio tracking and analytics
+  - name: Auto-lending
+    description: Automated lending configuration and management
+  - name: Messaging
+    description: Communication between borrowers and lenders
+  - name: Ratings
+    description: User rating and review system
+  - name: Admin Dashboard
+    description: Administrative oversight and platform metrics
+  - name: Admin Loan Management
+    description: Administrative loan approval and management
+  - name: Admin Risk Management
+    description: Risk monitoring and delinquency management
+  - name: Admin Financial Operations
+    description: Transaction monitoring and financial operations
+  - name: Admin Compliance
+    description: Fraud detection, audit logs, and compliance
+  - name: Reporting
+    description: Platform analytics and financial reporting
