@@ -170,12 +170,12 @@ paths:
                   pagination:
                     $ref: '#/components/schemas/PaginationInfo'
 
-  /users/{userId}:
+  /users/{user_id}:
     get:
       tags: [User Management]
       summary: Get user profile
       parameters:
-        - name: userId
+        - name: user_id
           in: path
           required: true
           schema:
@@ -195,7 +195,7 @@ paths:
       tags: [User Management]
       summary: Update user profile
       parameters:
-        - name: userId
+        - name: user_id
           in: path
           required: true
           schema:
@@ -219,7 +219,7 @@ paths:
       tags: [User Management]
       summary: Deactivate user account (Admin only)
       parameters:
-        - name: userId
+        - name: user_id
           in: path
           required: true
           schema:
@@ -230,12 +230,12 @@ paths:
           description: User deactivated successfully
 
   # KYC and Identity Verification
-  /users/{userId}/kyc:
+  /users/{user_id}/kyc:
     post:
       tags: [Identity Verification]
-      summary: Submit KYC documents
+      summary: Submit KYC information
       parameters:
-        - name: userId
+        - name: user_id
           in: path
           required: true
           schema:
@@ -244,35 +244,40 @@ paths:
       requestBody:
         required: true
         content:
-          multipart/form-data:
+          application/json:
             schema:
               type: object
-              required: [government_id_type, id_document, address_proof]
+              required: [government_id_type, government_id_number, address_line_1, city, country]
               properties:
                 government_id_type:
                   type: string
                   enum: [passport, drivers_license, national_id, voter_id]
-                id_document:
+                  example: "drivers_license"
+                government_id_number:
                   type: string
-                  format: binary
-                address_proof:
-                  type: string
-                  format: binary
+                  example: "DL123456789"
+                  description: "Government ID number (will be hashed for security)"
                 address_line_1:
                   type: string
+                  example: "123 Main Street"
                 address_line_2:
                   type: string
+                  example: "Apt 4B"
                 city:
                   type: string
+                  example: "Los Angeles"
                 state:
                   type: string
+                  example: "CA"
                 postal_code:
                   type: string
+                  example: "90210"
                 country:
                   type: string
+                  example: "US"
       responses:
         '201':
-          description: KYC documents submitted for verification
+          description: KYC information submitted for verification
           content:
             application/json:
               schema:
@@ -282,7 +287,7 @@ paths:
       tags: [Identity Verification]
       summary: Get KYC status
       parameters:
-        - name: userId
+        - name: user_id
           in: path
           required: true
           schema:
@@ -297,12 +302,12 @@ paths:
                 $ref: '#/components/schemas/KYCIdentity'
 
   # Wallet and Account Management
-  /users/{userId}/accounts:
+  /users/{user_id}/accounts:
     get:
       tags: [Wallet Management]
       summary: Get user wallet accounts
       parameters:
-        - name: userId
+        - name: user_id
           in: path
           required: true
           schema:
@@ -322,7 +327,7 @@ paths:
       tags: [Wallet Management]
       summary: Create new wallet account
       parameters:
-        - name: userId
+        - name: user_id
           in: path
           required: true
           schema:
@@ -347,12 +352,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/WalletAccount'
 
-  /accounts/{accountId}/transactions:
+  /accounts/{account_id}/transactions:
     get:
       tags: [Wallet Management]
       summary: Get account transaction history
       parameters:
-        - name: accountId
+        - name: account_id
           in: path
           required: true
           schema:
@@ -392,10 +397,17 @@ paths:
                     $ref: '#/components/schemas/PaginationInfo'
 
   # Loan Application Endpoints
-  /loan-applications:
+  /users/{user_id}/loan-application:
     post:
       tags: [Loan Applications]
       summary: Submit loan application
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
       requestBody:
         required: true
         content:
@@ -414,13 +426,14 @@ paths:
 
     get:
       tags: [Loan Applications]
-      summary: List loan applications
+      summary: List loan applications for user
       parameters:
-        - name: applicant_id
-          in: query
+        - name: user_id
+          in: path
+          required: true
           schema:
-            type: string
-            format: uuid
+            type: integer
+            format: int64
         - name: status
           in: query
           schema:
@@ -441,7 +454,7 @@ paths:
             default: 20
       responses:
         '200':
-          description: List of loan applications
+          description: List of loan applications for user
           content:
             application/json:
               schema:
@@ -454,17 +467,23 @@ paths:
                   pagination:
                     $ref: '#/components/schemas/PaginationInfo'
 
-  /loan-applications/{applicationId}:
+  /users/{user_id}/loan-applications/{application_id}:
     get:
       tags: [Loan Applications]
       summary: Get loan application details
       parameters:
-        - name: applicationId
+        - name: user_id
           in: path
           required: true
           schema:
-            type: string
-            format: uuid
+            type: integer
+            format: int64
+        - name: application_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
       responses:
         '200':
           description: Loan application details
@@ -477,12 +496,18 @@ paths:
       tags: [Loan Applications]
       summary: Update loan application (before approval)
       parameters:
-        - name: applicationId
+        - name: user_id
           in: path
           required: true
           schema:
-            type: string
-            format: uuid
+            type: integer
+            format: int64
+        - name: application_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
       requestBody:
         required: true
         content:
@@ -497,17 +522,23 @@ paths:
               schema:
                 $ref: '#/components/schemas/LoanApplication'
 
-  /loan-applications/{applicationId}/risk-assessment:
+  /users/{user_id}/loan-applications/{application_id}/risk-assessment:
     get:
       tags: [Risk Assessment]
       summary: Get risk assessment for loan application
       parameters:
-        - name: applicationId
+        - name: user_id
           in: path
           required: true
           schema:
-            type: string
-            format: uuid
+            type: integer
+            format: int64
+        - name: application_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
       responses:
         '200':
           description: Risk assessment details
@@ -516,48 +547,24 @@ paths:
               schema:
                 $ref: '#/components/schemas/RiskAssessment'
 
-    post:
-      tags: [Risk Assessment]
-      summary: Generate risk assessment (Admin only)
-      parameters:
-        - name: applicationId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                model_version:
-                  type: string
-                  default: "v2.1"
-                force_refresh:
-                  type: boolean
-                  default: false
-      responses:
-        '201':
-          description: Risk assessment generated
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RiskAssessment'
-
   # Loan Offers and Management
-  /loan-applications/{applicationId}/offers:
+  /users/{user_id}/loan-applications/{application_id}/offers:
     get:
       tags: [Loan Offers]
       summary: Get loan offers for application
       parameters:
-        - name: applicationId
+        - name: user_id
           in: path
           required: true
           schema:
-            type: string
-            format: uuid
+            type: integer
+            format: int64
+        - name: application_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
       responses:
         '200':
           description: Available loan offers
@@ -572,12 +579,18 @@ paths:
       tags: [Loan Offers]
       summary: Create loan offer (Lender/Admin)
       parameters:
-        - name: applicationId
+        - name: user_id
           in: path
           required: true
           schema:
-            type: string
-            format: uuid
+            type: integer
+            format: int64
+        - name: application_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
       requestBody:
         required: true
         content:
@@ -592,17 +605,17 @@ paths:
               schema:
                 $ref: '#/components/schemas/LoanOffer'
 
-  /loan-offers/{offerId}/accept:
+  /loan-offers/{offer_id}/accept:
     post:
       tags: [Loan Offers]
       summary: Accept loan offer (Borrower)
       parameters:
-        - name: offerId
+        - name: offer_id
           in: path
           required: true
           schema:
-            type: string
-            format: uuid
+            type: integer
+            format: int64
       responses:
         '200':
           description: Loan offer accepted, loan created
@@ -611,22 +624,89 @@ paths:
               schema:
                 $ref: '#/components/schemas/Loan'
 
-  # Active Loans Management
-  /loans:
+  # Loan Payment History (within Loan Applications)
+  /users/{user_id}/loans/{loan_id}/payments:
     get:
-      tags: [Loans]
-      summary: List loans
+      tags: [Loan Applications]
+      summary: Get loan payment history
       parameters:
-        - name: borrower_id
-          in: query
+        - name: user_id
+          in: path
+          required: true
           schema:
-            type: string
-            format: uuid
-        - name: lender_id
-          in: query
+            type: integer
+            format: int64
+        - name: loan_id
+          in: path
+          required: true
           schema:
-            type: string
-            format: uuid
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Payment history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Repayment'
+
+    post:
+      tags: [Loan Applications]
+      summary: Make loan payment
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: loan_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount, origin_account_id]
+              properties:
+                amount:
+                  type: number
+                  format: decimal
+                  minimum: 0.01
+                origin_account_id:
+                  type: string
+                  format: uuid
+                payment_method:
+                  type: string
+                  enum: [wallet, bank_transfer, mobile_money, card]
+                  default: wallet
+      responses:
+        '201':
+          description: Payment processed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Repayment'
+
+  # Loan Management 
+  /users/{user_id}/loans:
+    get:
+      tags: [Loan Applications]
+      summary: List loans for user
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
         - name: status
           in: query
           schema:
@@ -656,113 +736,47 @@ paths:
                   data:
                     type: array
                     items:
-                      $ref: '#/components/schemas/Loan'
+                      $ref: '#/components/schemas/Transaction'
                   pagination:
                     $ref: '#/components/schemas/PaginationInfo'
 
-  /loans/{loanId}:
+  /users/{user_id}/loans/{loan_id}:
     get:
-      tags: [Loans]
+      tags: [Loan Applications]
       summary: Get loan details
       parameters:
-        - name: loanId
+        - name: user_id
           in: path
           required: true
           schema:
-            type: string
-            format: uuid
+            type: integer
+            format: int64
+        - name: loan_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
       responses:
         '200':
           description: Loan details
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/LoanDetails'
-
-  /loans/{loanId}/schedule:
-    get:
-      tags: [Loans]
-      summary: Get loan repayment schedule
-      parameters:
-        - name: loanId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '200':
-          description: Repayment schedule
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/RepaymentSchedule'
-
-  /loans/{loanId}/payments:
-    get:
-      tags: [Loan Payments]
-      summary: Get loan payment history
-      parameters:
-        - name: loanId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '200':
-          description: Payment history
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Repayment'
-
-    post:
-      tags: [Loan Payments]
-      summary: Make loan payment
-      parameters:
-        - name: loanId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [amount, origin_account_id]
-              properties:
-                amount:
-                  type: number
-                  format: decimal
-                  minimum: 0.01
-                origin_account_id:
-                  type: string
-                  format: uuid
-                payment_method:
-                  type: string
-                  enum: [wallet, bank_transfer, mobile_money, card]
-                  default: wallet
-      responses:
-        '201':
-          description: Payment processed successfully
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Repayment'
+                $ref: '#/components/schemas/Loan'
 
   # Portfolio Management (Lenders)
-  /portfolio/summary:
+  /users/{user_id}/portfolio/summary:
     get:
       tags: [Portfolio Management]
       summary: Get lender portfolio summary
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
       responses:
         '200':
           description: Portfolio summary
@@ -771,11 +785,17 @@ paths:
               schema:
                 $ref: '#/components/schemas/PortfolioSummary'
 
-  /portfolio/loans:
+  /users/{user_id}/portfolio/loans:
     get:
       tags: [Portfolio Management]
       summary: Get lender's loan portfolio
       parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
         - name: status
           in: query
           schema:
@@ -815,10 +835,17 @@ paths:
                     $ref: '#/components/schemas/PaginationInfo'
 
   # Auto-lending Configuration
-  /auto-lending/config:
+  /users/{user_id}/auto-lending/config:
     get:
       tags: [Auto-lending]
       summary: Get auto-lending configuration
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
       responses:
         '200':
           description: Auto-lending configuration
@@ -830,6 +857,13 @@ paths:
     put:
       tags: [Auto-lending]
       summary: Update auto-lending configuration
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
       requestBody:
         required: true
         content:
@@ -844,105 +878,18 @@ paths:
               schema:
                 $ref: '#/components/schemas/AutoLendingConfig'
 
-  # Messaging System
-  /messages/threads:
-    get:
-      tags: [Messaging]
-      summary: Get message threads
-      parameters:
-        - name: application_id
-          in: query
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '200':
-          description: Message threads
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/MessageThread'
-
-    post:
-      tags: [Messaging]
-      summary: Create message thread
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [application_id, initial_message]
-              properties:
-                application_id:
-                  type: string
-                  format: uuid
-                initial_message:
-                  type: string
-      responses:
-        '201':
-          description: Thread created
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MessageThread'
-
-  /messages/threads/{threadId}/messages:
-    get:
-      tags: [Messaging]
-      summary: Get messages in thread
-      parameters:
-        - name: threadId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '200':
-          description: Messages in thread
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Message'
-
-    post:
-      tags: [Messaging]
-      summary: Send message
-      parameters:
-        - name: threadId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [body_text]
-              properties:
-                body_text:
-                  type: string
-      responses:
-        '201':
-          description: Message sent
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Message'
-
   # Ratings and Reviews
-  /ratings:
+  /users/{user_id}/ratings:
     post:
       tags: [Ratings]
       summary: Submit rating and review
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
       requestBody:
         required: true
         content:
@@ -957,17 +904,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/Rating'
 
-  /users/{userId}/ratings:
     get:
       tags: [Ratings]
       summary: Get user ratings
       parameters:
-        - name: userId
+        - name: user_id
           in: path
           required: true
           schema:
-            type: string
-            format: uuid
+            type: integer
+            format: int64
         - name: as_reviewer
           in: query
           description: Get ratings given by this user
@@ -993,7 +939,7 @@ paths:
   # Administrative Endpoints
   /admin/dashboard:
     get:
-      tags: [Admin Dashboard]
+      tags: [Admin]
       summary: Get admin dashboard data
       responses:
         '200':
@@ -1005,7 +951,7 @@ paths:
 
   /admin/loans/approval:
     get:
-      tags: [Admin Loan Management]
+      tags: [Admin]
       summary: Get loans pending manual review
       parameters:
         - name: page
@@ -1036,17 +982,17 @@ paths:
                   pagination:
                     $ref: '#/components/schemas/PaginationInfo'
 
-  /admin/loans/{loanId}/approve:
+  /admin/loans/{loan_id}/approve:
     post:
-      tags: [Admin Loan Management]
+      tags: [Admin]
       summary: Manually approve loan application
       parameters:
-        - name: loanId
+        - name: loan_id
           in: path
           required: true
           schema:
-            type: string
-            format: uuid
+            type: integer
+            format: int64
       requestBody:
         content:
           application/json:
@@ -1065,17 +1011,17 @@ paths:
               schema:
                 $ref: '#/components/schemas/LoanApplication'
 
-  /admin/loans/{loanId}/reject:
+  /admin/loans/{loan_id}/reject:
     post:
-      tags: [Admin Loan Management]
+      tags: [Admin]
       summary: Reject loan application
       parameters:
-        - name: loanId
+        - name: loan_id
           in: path
           required: true
           schema:
-            type: string
-            format: uuid
+            type: integer
+            format: int64
       requestBody:
         required: true
         content:
@@ -1098,7 +1044,7 @@ paths:
 
   /admin/delinquency:
     get:
-      tags: [Admin Risk Management]
+      tags: [Admin]
       summary: Get delinquency reports
       parameters:
         - name: days_past_due
@@ -1136,7 +1082,7 @@ paths:
 
   /admin/transactions:
     get:
-      tags: [Admin Financial Operations]
+      tags: [Admin]
       summary: Monitor all platform transactions
       parameters:
         - name: transaction_type
@@ -1194,7 +1140,7 @@ paths:
 
   /admin/fraud-alerts:
     get:
-      tags: [Admin Compliance]
+      tags: [Admin]
       summary: Get fraud detection alerts
       parameters:
         - name: status
@@ -1219,7 +1165,7 @@ paths:
 
   /admin/audit-logs:
     get:
-      tags: [Admin Compliance]
+      tags: [Admin]
       summary: Get audit trail logs
       parameters:
         - name: actor_id
@@ -3072,27 +3018,13 @@ tags:
     description: Credit scoring and risk evaluation
   - name: Loan Offers
     description: Loan offer creation, management, and acceptance
-  - name: Loans
-    description: Active loan management and monitoring
-  - name: Loan Payments
-    description: Loan repayment processing and history
   - name: Portfolio Management
     description: Lender portfolio tracking and analytics
   - name: Auto-lending
     description: Automated lending configuration and management
-  - name: Messaging
-    description: Communication between borrowers and lenders
   - name: Ratings
     description: User rating and review system
-  - name: Admin Dashboard
-    description: Administrative oversight and platform metrics
-  - name: Admin Loan Management
-    description: Administrative loan approval and management
-  - name: Admin Risk Management
-    description: Risk monitoring and delinquency management
-  - name: Admin Financial Operations
-    description: Transaction monitoring and financial operations
-  - name: Admin Compliance
-    description: Fraud detection, audit logs, and compliance
+  - name: Admin
+    description: Administrative operations including dashboard, loan management, risk monitoring, financial operations, and compliance
   - name: Reporting
     description: Platform analytics and financial reporting
