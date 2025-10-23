@@ -1,1 +1,1 @@
-select * from loan_payments 
+select * from rating_review
