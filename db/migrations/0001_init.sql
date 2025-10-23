@@ -249,13 +249,10 @@ FOREIGN KEY (thread_id) REFERENCES message_thread(thread_id)
 CREATE TABLE IF NOT EXISTS rating_review (
 review_id BIGINT PRIMARY KEY AUTO_INCREMENT,
 reviewer_id BIGINT NOT NULL,
-reviewee_id BIGINT NOT NULL,
 rating TINYINT NOT NULL,
 comment TEXT,
 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-UNIQUE (reviewer_id, reviewee_id),
-FOREIGN KEY (reviewer_id) REFERENCES user_account(user_id),
-FOREIGN KEY (reviewee_id) REFERENCES user_account(user_id)
+FOREIGN KEY (reviewer_id) REFERENCES user_account(user_id)
 );
 
 CREATE TABLE IF NOT EXISTS audit_log (

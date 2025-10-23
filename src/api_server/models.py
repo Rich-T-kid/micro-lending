@@ -4,7 +4,7 @@ from sqlalchemy.dialects.mysql import TINYINT
 from sqlalchemy.orm import sessionmaker, declarative_base, relationship
 from datetime import datetime, date
 from decimal import Decimal as PyDecimal
-from typing import Optional
+from typing import Optional, Union
 
 # Create declarative base
 Base = declarative_base()
@@ -262,7 +262,6 @@ class RatingReview(Base):
     
     review_id = Column(BIGINT, primary_key=True, autoincrement=True)
     reviewer_id = Column(BIGINT, ForeignKey('user_account.user_id'), nullable=False)
-    reviewee_id = Column(BIGINT, ForeignKey('user_account.user_id'), nullable=False)
     rating = Column(TINYINT, nullable=False)
     comment = Column(Text)
     created_at = Column(TIMESTAMP, default=datetime.utcnow)
@@ -667,7 +666,7 @@ class CreateLoanOfferRequest(BaseModel):
     principal_amount: float = Field(..., ge=25, example=4500.00, description="Principal loan amount")
     currency_code: str = Field(..., max_length=3, example="USD", description="Currency code")
     interest_apr: float = Field(..., ge=0, le=100, example=5.5, description="Annual percentage rate")
-    repayment_type: str = Field(..., example="equal_installments", description="Repayment schedule type")
+    repayment_type: str = Field(..., example="AMORTIZING", description="Repayment schedule type (AMORTIZING, INTEREST_ONLY, BULLET)")
     term_months: int = Field(..., gt=0, le=360, example=12, description="Loan term in months")
     conditions: Optional[str] = Field(None, max_length=1000, description="Special conditions")
 
@@ -677,7 +676,7 @@ class CreateLoanOfferRequest(BaseModel):
                 "principal_amount": 4500.00,
                 "currency_code": "USD",
                 "interest_apr": 5.5,
-                "repayment_type": "equal_installments",
+                "repayment_type": "AMORTIZING",
                 "term_months": 12,
                 "conditions": "Standard terms apply"
             }
@@ -691,7 +690,6 @@ class LoanOfferResponse(BaseModel):
     amount_offered: float = Field(..., example=4500.00, description="Offered amount")
     term_months: int = Field(..., example=12, description="Term in months")
     status: str = Field(..., example="pending", description="Offer status")
-    expires_at: datetime = Field(..., description="Offer expiration")
     created_at: datetime = Field(..., description="Offer creation date")
 
     class Config:
@@ -1004,41 +1002,56 @@ class AdminTransactionResponse(BaseModel):
             }
         }
 
-# Rating and Review Models
-class CreateRatingRequest(BaseModel):
-    reviewee_id: int = Field(..., example=456, description="ID of user being rated")
-    rating: int = Field(..., ge=1, le=5, example=5, description="Rating from 1-5")
-    comment: Optional[str] = Field(None, max_length=1000, description="Optional review comment")
-    transaction_id: Optional[int] = Field(None, description="Related transaction/loan ID if applicable")
+class CreateRatingResponse(BaseModel):
+    """Simple response model for rating submission"""
+    rating_id: int = Field(..., example=1, description="Unique identifier for this rating")
+    reviewee_id: int = Field(..., example=456789, description="Auto-generated reviewee ID")
+    rating: int = Field(..., example=5, description="Star rating value from 1-5")
+    comment: Optional[str] = Field(None, example="Excellent service!", description="Review comment text")
+    date_created: datetime = Field(..., example="2023-10-19T10:30:00Z", description="When the rating was created")
+    successful: bool = Field(..., example=True, description="Whether the rating was successfully created")
 
     class Config:
         schema_extra = {
             "example": {
-                "reviewee_id": 456,
+                "rating_id": 1,
+                "reviewee_id": 456789,
                 "rating": 5,
-                "comment": "Excellent borrower, paid on time",
-                "transaction_id": 123
+                "comment": "Excellent service!",
+                "date_created": "2023-10-19T10:30:00Z",
+                "successful": True
+            }
+        }
+
+# Rating and Review Models
+class CreateRatingRequest(BaseModel):
+    """Request model for submitting a new rating"""
+    rating: int = Field(..., ge=1, le=5, example=5, description="Star rating from 1-5 (5 being the best)")
+    comment: Optional[str] = Field(None, max_length=1000, example="Excellent service! Fast processing and great communication throughout the entire process.", description="Optional review comment (maximum 1000 characters)")
+
+    class Config:
+        schema_extra = {
+            "example": {
+                "rating": 5,
+                "comment": "Excellent service! Fast processing and great communication throughout the entire process. Highly recommend!"
             }
         }
 
 class RatingResponse(BaseModel):
-    rating_id: int = Field(..., example=1, description="Rating ID")
-    reviewer_id: int = Field(..., example=123, description="ID of user who gave rating")
-    reviewee_id: int = Field(..., example=456, description="ID of user being rated")
-    rating: int = Field(..., example=5, description="Rating value 1-5")
-    review_text: Optional[str] = Field(None, description="Review text")
-    related_loan_id: Optional[int] = Field(None, description="Related loan ID")
-    created_at: datetime = Field(..., description="Rating creation date")
+    """Response model for rating data"""
+    rating_id: int = Field(..., example=1, description="Unique identifier for this rating")
+    reviewer_id: int = Field(..., example=123, description="ID of the user who submitted this rating")
+    rating: int = Field(..., example=5, description="Star rating value from 1-5")
+    review_text: Optional[str] = Field(None, example="Excellent service! Fast processing and great communication.", description="Review comment text (if provided)")
+    created_at: datetime = Field(..., example="2023-10-19T10:30:00Z", description="Timestamp when the rating was submitted")
 
     class Config:
         schema_extra = {
             "example": {
                 "rating_id": 1,
                 "reviewer_id": 123,
-                "reviewee_id": 456,
                 "rating": 5,
-                "review_text": "Excellent borrower, paid on time",
-                "related_loan_id": 123,
-                "created_at": "2023-10-19T10:30:00"
+                "review_text": "Excellent service! Fast processing and great communication throughout the entire process. Highly recommend!",
+                "created_at": "2023-10-19T10:30:00Z"
             }
         }

@@ -681,8 +681,8 @@ paths:
                   format: decimal
                   minimum: 0.01
                 origin_account_id:
-                  type: string
-                  format: uuid
+                  type: integer
+                  format: int64
                 payment_method:
                   type: string
                   enum: [wallet, bank_transfer, mobile_money, card]
@@ -982,12 +982,12 @@ paths:
                   pagination:
                     $ref: '#/components/schemas/PaginationInfo'
 
-  /admin/loans/{loan_id}/approve:
+  /admin/loans/{application_id}/approve:
     post:
       tags: [Admin]
       summary: Manually approve loan application
       parameters:
-        - name: loan_id
+        - name: application_id
           in: path
           required: true
           schema:
@@ -1011,12 +1011,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/LoanApplication'
 
-  /admin/loans/{loan_id}/reject:
+  /admin/loans/{application_id}/reject:
     post:
       tags: [Admin]
       summary: Reject loan application
       parameters:
-        - name: loan_id
+        - name: application_id
           in: path
           required: true
           schema:
@@ -2088,8 +2088,8 @@ components:
           type: string
           format: uuid
         origin_account_id:
-          type: string
-          format: uuid
+          type: integer
+          format: int64
         destination_account_id:
           type: string
           format: uuid
@@ -2443,9 +2443,6 @@ components:
       type: object
       required: [reviewee_id, rating]
       properties:
-        reviewee_id:
-          type: string
-          format: uuid
         rating:
           type: integer
           minimum: 1
@@ -2453,10 +2450,6 @@ components:
         comment:
           type: string
           maxLength: 1000
-        transaction_id:
-          type: string
-          format: uuid
-          description: Related loan or transaction ID
 
     Rating:
       type: object
@@ -2968,8 +2961,8 @@ components:
           type: string
           format: uuid
         origin_account_id:
-          type: string
-          format: uuid
+          type: integer
+          format: int64
           description: Lender's account
         destination_account_id:
           type: string
