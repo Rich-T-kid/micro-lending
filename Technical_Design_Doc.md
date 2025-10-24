@@ -1,128 +1,223 @@
-# Techinical Design Document (TDD)
-
-
+# **Technical Design Document (TDD)**
 
 ## 1. Document Control
-- **Version:** 1.0
-- **Author:** Richard Baah, Jose Lamela, Saksham Mehta
-- **Date:** 2025-9-4
-- **Reviewers:** Dev Team
--**Github** https://github.com/Rich-T-kid/micro-lending 
+
+* **Version:** 1.0
+* **Author:** Richard Baah, Jose Lamela, Saksham Mehta
+* **Date:** 2025-09-04
+* **Reviewers:** Development Team
+
+---
+
 ## 2. Introduction
-This document describes the technical implementation for a microlending service. Linked FRD: [Micro-lending FRD](./Fuctional_Req.md)
-## 3. High-Level Architecture
-Link to: 
-[Architectural Diagram](./Archietecural_Diagram.md)
-## 4.1 Data Model
-**tables**
-- UserAccount(user_id, email, password_hash, full_name, phone, created_at, status)
-- UserRole(role_id, role_name, description)
-- UserAccountRole(user_id, role_id, assigned_at)
-- Institution(institution_id, name, type, registration_no, contact_email, contact_phone, address, created_at, status)
-- UserProfile(user_id, date_of_birth, country, address, credit_score, income, employment_status)
-- KYCVerification(kyc_id, user_id, status, verified_at, data_json)
-- Currency(currency_code, name, symbol, minor_unit)
-- ExchangeRate(rate_id, base_currency, quote_currency, rate, as_of)
-- Wallet(wallet_id, owner_type, owner_id, currency_code, balance, updated_at)
-- Transaction(transaction_id, wallet_id, loan_id, type, amount, currency_code, occurred_at, reference, metadata_json)
-- LoanProduct(product_id, institution_id, name, description, min_amount, max_amount, interest_rate_type, base_rate_apr, term_min_months, term_max_months, fees_json, collateral_required, created_at, status)
-- LoanApplication(application_id, applicant_type, applicant_id, product_id, requested_amount, currency_code, requested_term_months, purpose, submitted_at, status, score, decisioned_at)
-- UnderwritingRule(rule_id, name, description, rule_logic_json, active)
-- UnderwritingDecision(decision_id, application_id, rule_id, outcome, score_delta, reasons_json, decided_at)
-- P2PLoanRequest(request_id, borrower_id, requested_amount, currency_code, requested_term_months, purpose, posted_at, status)
-- P2POffer(offer_id, request_id, lender_id, amount, interest_rate_apr, term_months, expires_at, status, accepted_at)
-- Loan(loan_id, source_type, source_id, borrower_id, lender_id, product_id, principal_amount, currency_code, interest_rate_apr, term_months, start_date, maturity_date, repayment_schedule_json, status, created_at)
-- LoanParticipant(loan_id, participant_type, participant_id, role, share_percent)
-- RepaymentSchedule(schedule_id, loan_id, installment_no, due_date, due_principal, due_interest, fees_due, currency_code, status)
-- Payment(payment_id, loan_id, schedule_id, payer_type, payer_id, amount, currency_code, paid_at, method, reference, status)
-- DelinquencyEvent(event_id, loan_id, schedule_id, days_past_due, bucket, noted_at, status)
-- Restructuring(restructure_id, loan_id, reason, new_term_months, new_rate_apr, effective_date, approved_by, approved_at)
-- Dispute(dispute_id, loan_id, raised_by_type, raised_by_id, reason, status, opened_at, resolved_at, resolution_notes)
-- RatingReview(review_id, rater_id, ratee_id, loan_id, rating, comment, created_at, updated_at)
-- Notification(notification_id, recipient_type, recipient_id, channel, template_key, payload_json, sent_at, status)
-- Document(document_id, owner_type, owner_id, category, file_url, checksum, uploaded_at, verified_at, status)
-- AuditLog(audit_id, actor_type, actor_id, action, entity_type, entity_id, old_values_json, new_values_json, ip_address, user_agent, occurred_at)
-## 4.2  System Achitecture
-- **Presentation Layer:** minimal web UI (HTML/CSS/JS) consuming REST APIs
-- **Business Layer:** FastAPI service implementing domain logic, validations, and RBAC
-- **Data Layer:** MySQL 8.x with strict referential migrations and indexes
-## 4.3 Application Logic
-- borrowers need to pass credit checks --> data is taken from db and passed through alorithm to determine borrower risk rate
-- borrower payment information is taken and stored in db --> automatic payments to creditor
-- creditor dashboard which displays all different borrowers and information from their invesments
-## 3. Interface Design
-- **Web UI:** forms for create/edit; tables with filtering/sorting; CSV export buttons 
-- **API Endpoints (examples):**
-  - `POST /auth/login` — returns JWT
-  - `POST /applications` / `GET /applications?status=SUBMITTED`  
-  - `POST /applications/<built-in function id>/offers`  
-  - `POST /applications/<built-in function id>/approve` (Admin)  
-  - `POST /loans/<built-in function id>/disburse` (Admin)  
-  - `POST /loans/<built-in function id>/repayments`  
-  - `GET /reports/delinquency?as_of=YYYY-MM-DD`
-## 5. Technlology Stack
-**Frontend** - HMTL, CSS, JS
-**Backend** - Python, Fast API
-**Database** - SQL
-**Hosting** - Railway
-## 6. Security & Compliance
-- JWT-based authentication, role-based access control  
-- password hashing, TLS for all connections  
-- input validation, prepared SQL statements  
-- audit logging for all critical actions  
-- basic compliance with KYC/AML flows  
-## 7. Database Design Decisions
-## 7.1 Normalization
-- Core entities (users, applications, offers, loans, schedules, repayments, ledger) are modeled in **3NF** to avoid anomalies
-- Limited **JSON** columns for flexible metadata (notes) where structure is variable; not used for relational joins 
 
-## 7.2 Data Types
-- Monetary fields use `DECIMAL(18,2)` (or `(18,4)` in ledger for precision).  
-- `ENUM`/reference tables for statuses (e.g., APPLICATION_STATUS, OFFER_STATUS) for validation and performant filters
-- All timestamps in UTC with `TIMESTAMP`/`DATETIME` as appropriate; `BIGINT` for identifiers where growth is expected
+This document outlines the **technical design and implementation strategy** for the **Microlending Platform** described in the Functional Requirements Document (FRD).
 
-## 7.3 Indexing Strategy
-- Foreign key columns indexed by default; additional composite indexes for high‑cardinality lookups:  
-  - `applications(status, created_at)`  
-  - `offers(application_id, status, created_at)`  
-  - `loans(borrower_id, status)`  
-  - `repayments(loan_id, posted_at)`  
-  - `ledger(loan_id, posted_at)`  
-- Covering indexes are added based on query plans observed in staging. Periodic re‑evaluation
+The system enables borrowers to request small loans and lenders to fund them, while enforcing credit evaluation, repayment tracking, and compliance reporting.
 
-## 7.4 Referential Integrity
-- All cross‑table relations enforce `FOREIGN KEY` constraints
-- Uniqueness: one review per reviewer–reviewee pair; offer IDs unique; user emails unique 
-- Cascades: `ON DELETE RESTRICT` for financials; explicit archival via soft‑delete flags where needed
+**Linked Document:** [Microlending FRD](./Functional_Req.md)
 
-## 7.5 Transactions & Consistency
-- Multi‑write operations (disbursement + ledger, repayment + allocation) run in a single transaction
-- Idempotency keys ensure repeated webhook posts do not create duplicate rows
-## 8. Risks & Mitigations
-- **Fraud/abuse** --> KYC checks, role approvals  
-- **Data breach** --> encryption, least privilege access  
-- **Duplicate/failed payments** --> idempotency keys, transaction checks  
-- **Performance issues** --> indexing, load testing, simple caching  
-## 9. Testing Strategy
-- unit tests for business logic  
-- integration tests for API ↔ DB  
-- end-to-end tests for loan lifecycle flows  
-- basic security testing for inputs/authentication  
-## 10. Deployment & Monitoring
-- CI/CD with GitHub Actions --> AWS deploys  
-- structured logging and error tracking  
-- basic metrics (API latency, DB health)  
-- alerts for failed deploys or high error rates  
-## 11. Entitlements (Roles → Functions)
-| Function / Endpoint | Borrower | Lender | Admin |
-|---|---|---|---|
-| View own profile & apps | ✅ | ✅ | ✅ |
-| Create loan application | ✅ | ❌ | ❌ |
-| Submit funding offer | ❌ | ✅ | ❌ |
-| Approve/deny application | ❌ | ❌ | ✅ |
-| Disburse / reverse | ❌ | ❌ | ✅ |
-| Post repayment | ✅ | ✅ (if collecting) | ✅ |
-| View portfolio analytics | ❌ | ✅ | ✅ |
-| Manage users/roles | ❌ | ❌ | ✅ |
-| Run delinquency reports | ❌ | ❌ | ✅ |
-| Export CSV | ✅ (own) | ✅ (own) | ✅ (all) |
+---
+
+## 3. System Architecture
+
+### **3.1 Overview**
+
+The system follows a **three-tier architecture**:
+
+| Layer                  | Description                                                            | Components                            |
+| ---------------------- | ---------------------------------------------------------------------- | ------------------------------------- |
+| **Presentation Layer** | User-facing web interface for borrowers, lenders, and admins.          | HTML/CSS/JS frontend                  |
+| **Application Layer**  | Business logic for loan processing, scoring, payments, and compliance. | FastAPI (Python)                      |
+| **Data Layer**         | Persistent relational storage for structured financial and user data.  | PostgreSQL database hosted on Railway |
+
+All layers communicate via RESTful APIs secured with JWT authentication.
+
+### **3.2 Architectural Diagram**
+
+📄 *See:* [Architectural Diagram](./Architectural_Diagram.md)
+
+---
+
+## 4. Data Model
+
+The data model is designed for **referential integrity**, **normalized structure**, and **auditability**.
+Each entity follows a clear ownership and foreign key hierarchy to maintain consistency across borrower, lender, and transaction records.
+
+### **4.1 Core Tables**
+
+| Entity                          | Description                                         |
+| ------------------------------- | --------------------------------------------------- |
+| `UserAccount`                   | Stores user identity and credentials.               |
+| `UserRole` / `UserAccountRole`  | Defines role-based access.                          |
+| `Institution`                   | Represents financial or lending institutions.       |
+| `UserProfile`                   | Holds borrower demographics and credit information. |
+| `KYCVerification`               | Captures verification results for compliance.       |
+| `LoanApplication`               | Tracks borrower loan requests and risk decisions.   |
+| `LoanProduct`                   | Defines loan offerings by institutions.             |
+| `Loan`                          | Represents active funded loans.                     |
+| `Payment` / `RepaymentSchedule` | Tracks repayments and outstanding balances.         |
+| `P2PLoanRequest` / `P2POffer`   | Manages peer-to-peer loan postings.                 |
+| `Notification`                  | Logs outbound user communications.                  |
+| `AuditLog`                      | Records every user or system action for compliance. |
+
+### **4.2 Normalization and Integrity**
+
+* **Normalization Level:** 3rd Normal Form (3NF)
+
+  * Prevents duplication across entities (e.g., users vs. institutions).
+* **Foreign Keys:** Enforced between user, loan, and payment tables.
+* **Referential Integrity:** Cascading deletes for dependent records.
+* **Indexing:**
+
+  * `CREATE INDEX idx_user_email ON UserAccount(email);`
+  * `CREATE INDEX idx_loan_status ON Loan(status);`
+  * `CREATE INDEX idx_payment_loan_id ON Payment(loan_id);`
+* **Data Types:**
+
+  * `UUID` for primary keys
+  * `JSONB` for flexible metadata fields (e.g., fees, audit data)
+  * `TIMESTAMP` for lifecycle events
+
+---
+
+## 5. Technology Stack
+
+| Component             | Technology                                                               |
+| --------------------- | ------------------------------------------------------------------------ |
+| **Frontend**          | HTML, CSS, JavaScript (responsive design)                                |
+| **Backend Framework** | Python with FastAPI                                                      |
+| **Database**          | PostgreSQL (hosted on Railway)                                           |
+| **Hosting**           | Railway (auto-deploy via GitHub Actions)                                 |
+| **Authentication**    | JWT (Bearer tokens)                                                      |
+| **External Services** | Stripe/PayPal (payments), Persona/Onfido (KYC), SendGrid (notifications) |
+
+---
+
+## 6. API Design
+
+| Attribute          | Description                   |
+| ------------------ | ----------------------------- |
+| **Style**          | REST (JSON-based)             |
+| **Base URL**       | `/api/v1/`                    |
+| **Authentication** | `Authorization: Bearer <JWT>` |
+| **Content-Type**   | `application/json`            |
+
+### **Example Endpoints**
+
+| Method                     | Endpoint                         | Description |
+| -------------------------- | -------------------------------- | ----------- |
+| `POST /auth/login`         | User authentication              |             |
+| `POST /loans/apply`        | Submit borrower loan application |             |
+| `GET /loans/{id}`          | Retrieve loan details            |             |
+| `POST /payments/{loan_id}` | Make loan repayment              |             |
+| `GET /admin/users`         | Admin view of all users          |             |
+
+---
+
+## 7. Security Approach
+
+| Area                         | Technique                                                |
+| ---------------------------- | -------------------------------------------------------- |
+| **Authentication**           | JWT-based token issuance on login                        |
+| **Authorization**            | Role-based access (Borrower, Lender, Admin, Compliance)  |
+| **Data Protection**          | Password hashing (bcrypt/SHA256), TLS encryption         |
+| **SQL Injection Prevention** | Parameterized queries & ORM input validation             |
+| **Audit Logging**            | Track all CRUD and authentication actions                |
+| **Compliance**               | Adheres to KYC/AML requirements with secure data storage |
+
+---
+
+## 8. Entitlements and Role Mapping
+
+| Role                   | Accessible Functions                                     |
+| ---------------------- | -------------------------------------------------------- |
+| **Borrower**           | Apply for loans, view repayment status, send messages    |
+| **Lender**             | Fund loans, view investments, withdraw balance           |
+| **Administrator**      | Manage users, approve loans, generate system reports     |
+| **Compliance Officer** | View audit trails, export reports, view flagged accounts |
+
+All entitlements are enforced via middleware intercepting JWT claims before controller execution.
+
+---
+
+## 9. Interface Design
+
+| Interface                    | Description                                                |
+| ---------------------------- | ---------------------------------------------------------- |
+| **Web Interface (Frontend)** | Lightweight HTML/JS dashboard for end users                |
+| **Admin Console**            | Role-based admin dashboard with data tables and filters    |
+| **API Interface**            | JSON-based API for integrations and mobile extensions      |
+| **CLI (optional)**           | Developer or DevOps tools for migrations, logs, or testing |
+
+Each view layer interacts with the FastAPI backend using secured REST endpoints.
+
+---
+
+## 10. Scalability Considerations
+
+| Area                       | Strategy                                                                 |
+| -------------------------- | ------------------------------------------------------------------------ |
+| **Database Scaling**       | Vertical scaling via Railway Postgres tiers, read replicas for analytics |
+| **Application Scaling**    | Horizontal scaling via Railway auto-scaling instances                    |
+| **Caching**                | Redis layer for frequent lookups (e.g., user sessions, exchange rates)   |
+| **Load Balancing**         | Railway-managed load balancing for multiple backend pods                 |
+| **Data Sharding (Future)** | Partition loans/payments by region or institution for distributed writes |
+
+---
+
+## 11. Performance Optimization
+
+* Index frequent query columns (`email`, `status`, `loan_id`).
+* Use database connection pooling to reduce latency.
+* Cache static configurations (currencies, rates).
+* Optimize SELECT queries with joins instead of subqueries.
+* Asynchronous I/O via FastAPI for concurrent requests.
+
+---
+
+## 12. Risks and Mitigations
+
+| Risk                        | Mitigation                                                |
+| --------------------------- | --------------------------------------------------------- |
+| **Fraud or abuse**          | KYC verification, admin approval of lenders               |
+| **Data breach**             | Encryption at rest + TLS, RBAC, least privilege DB access |
+| **Duplicate payments**      | Transactional idempotency keys                            |
+| **Performance degradation** | Index tuning, Redis caching, async processing             |
+| **Service downtime**        | Health checks and Railway auto-restarts                   |
+
+---
+
+## 13. Testing Strategy
+
+| Type                  | Description                                                   |
+| --------------------- | ------------------------------------------------------------- |
+| **Unit Tests**        | Validate business logic (loan calculations, validation rules) |
+| **Integration Tests** | API and database interactions                                 |
+| **E2E Tests**         | Full loan lifecycle flow (apply → approve → fund → repay)     |
+| **Security Tests**    | SQL injection, token forgery, input fuzzing                   |
+| **Load Testing**      | Simulate concurrent users to ensure scalability               |
+
+Testing pipeline runs via **GitHub Actions CI**.
+
+---
+
+## 14. Deployment & Monitoring
+
+| Category           | Description                                                   |
+| ------------------ | ------------------------------------------------------------- |
+| **CI/CD**          | Automated pipeline (build → test → deploy) via GitHub Actions |
+| **Hosting**        | Railway container deployment                                  |
+| **Monitoring**     | Structured logging (JSON), Railway metrics, alert hooks       |
+| **Error Tracking** | Logged via centralized service (e.g., Sentry)                 |
+| **Metrics**        | API latency, DB health, active users, error rates             |
+| **Alerts**         | Triggered on failed builds, downtime, or anomalies            |
+
+---
+
+## 15. Future Enhancements
+
+* Add ML-based credit scoring for improved risk evaluation.
+* Introduce mobile-native app integration via REST endpoints.
+* Multi-language support for global borrower inclusion.
+* Event-driven architecture (Kafka) for scaling notifications and transactions.

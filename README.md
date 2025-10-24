@@ -1,65 +1,53 @@
-# Microlending Database (Basics)
+# Micro-Lending Platform
 
-A small, focused repo for the **database** behind a microlending app. It contains SQL to create the schema, seed minimal reference data, and add helpful indexes/views. The DB runs on **Amazon RDS for MySQL** so teammates can connect and work from anywhere (with access allowed).
-
----
-
-## What This Does
-
-* **Creates tables & relations** for users, roles, loan applications, risk, offers, loans, repayments, transactions, messages, and audit.
-* **Seeds** baseline data (roles, currencies).
-* **Adds indexes & views** to speed up common queries (offers per application, overdue installments, cash flows, latest message per thread).
-
-> Default DB charset/collation targets full Unicode on MySQL 8: `utf8mb4` + `utf8mb4_0900_ai_ci`.
+A comprehensive micro-lending platform supporting borrowers, lenders, and administrative operations. Includes a MySQL database schema, FastAPI backend, and admin/reporting endpoints.
 
 ---
 
-## Connect to the Database (RDS)
+## Project Overview
 
-**You need:** the RDS **endpoint**, **port** (3306), **database name** (e.g., `microlending`), and a **username/password**. Your IPv4 address must be allowed in the RDS **Security Group** (Inbound: MySQL/Aurora 3306 from `your.ip.addr.ess/32`).
+This project provides:
+- **Database schema** for users, loans, repayments, transactions, ratings, and admin features
+- **FastAPI backend** for authentication, user management, KYC, wallet, loan applications, risk assessment, offers, payments, portfolio, auto-lending, ratings, admin, and reporting
+- **Admin dashboard** and compliance endpoints
 
-### CLI (mysql)
+---
 
+## Setup & Installation
+
+### Prerequisites
+- Python 3.11+
+- MySQL 8+ (Amazon RDS recommended)
+- Docker (optional, for local MySQL)
+
+### Clone the Repository
 ```bash
-# Optionally load .env if you have these set
-set -a; source .env; set +a
-
-mysql -h "$MYSQL_HOST" -P 3306 -u "$MYSQL_USER" -p
+git clone https://github.com/Rich-T-kid/micro-lending.git
+cd micro-lending
 ```
 
-### Workbench / DBeaver
-
-* **Hostname:** `<rds-endpoint>`
-* **Port:** `3306`
-* **Username:** `<username>`
-* **Password:** `<password>`
-* **Database:** `microlending`
-
----
-
-## Create DB & Run Migrations (once per environment)
-
-If the `microlending` database does not exist yet:
-
+### Install Python Dependencies
 ```bash
-mysql --ssl-mode=REQUIRED -h <endpoint> -P 3306 -u <admin-or-migration-user> -p \
-  -e "CREATE DATABASE IF NOT EXISTS microlending CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;"
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 ```
 
-Apply migrations in order (from the repo root):
-
+### Database Setup
+1. Create a MySQL database (see below for charset/collation)
+2. Apply migrations:
 ```bash
 mysql --ssl-mode=REQUIRED -h <endpoint> -P 3306 -u <user> -p microlending < db/migrations/0001_init.sql
 mysql --ssl-mode=REQUIRED -h <endpoint> -P 3306 -u <user> -p microlending < db/migrations/0002_seed_minimum.sql
 mysql --ssl-mode=REQUIRED -h <endpoint> -P 3306 -u <user> -p microlending < db/migrations/0003_indexes.sql
 ```
+Or use the helper script:
+```bash
+sh db/scripts/migrate.sh
+```
 
----
-
-## Environment Variables (optional, for convenience)
-
-Create a local `.env` (do **not** commit real secrets):
-
+### Environment Variables
+Create a `.env` file with your database credentials:
 ```dotenv
 MYSQL_HOST=your-db-endpoint.rds.amazonaws.com
 MYSQL_PORT=3306
@@ -68,32 +56,65 @@ MYSQL_USER=app_user
 MYSQL_PASSWORD=replace-me
 ```
 
-Load them before running CLI commands:
+---
 
+## How to Run the API Server
+
+1. Activate your Python environment:
 ```bash
-set -a; source .env; set +a
+source .venv/bin/activate
 ```
+2. Start the FastAPI server:
+```bash
+python src/api_server/server.py
+```
+Or with Uvicorn:
+```bash
+uvicorn src/api_server/server:app --reload
+```
+3. Visit [http://localhost:8000/docs](http://localhost:8000/docs) for interactive Swagger UI.
 
 ---
 
-## Quick Security Notes
+## Current Implementation Status
 
-* **Allow-list IPv4 only** (Inbound 3306 from `x.x.x.x/32`). Avoid `0.0.0.0/0`.
-* Use a **least-privilege user** for app and teammate access; keep the admin user for migrations.
-* Keep **SSL enabled** (`--ssl-mode=REQUIRED`).
+- **Database:**
+  - Schema, migrations, and seed data complete
+  - Indexes and views for performance
+- **API Server:**
+  - All major endpoints implemented (auth, users, KYC, wallet, loans, offers, payments, ratings, admin, reporting)
+  - JWT authentication and error handling
+  - Admin dashboard, compliance, and reporting endpoints
+  - Ratings & review system simplified and functional
+- **Testing:**
+  - Pytest configuration included
+  - Unit and integration tests in `src/api_server/server_test.py`
+- **Docs:**
+  - Swagger/OpenAPI spec in `src/api_server/spec.yml`
+  - Architectural and technical docs in repo root
 
 ---
 
 ## Repo Layout
 
 ```
- db/
- ├─ migrations/
- │  ├─ 0001_init.sql
- │  ├─ 0002_seed_minimum.sql
- │  └─ 0003_indexes.sql
- └─ scripts/
-    └─ migrate.sh (optional helper)
+├── db/
+│   ├── migrations/
+│   └── scripts/
+├── src/api_server/
+│   ├── models.py
+│   ├── server.py
+│   ├── server_test.py
+│   └── spec.yml
+├── requirements.txt
+├── README.md
+└── ...
 ```
 
-That’s it. Share your endpoint and a user with teammates (and allow their IPs) so they can connect and start inserting/querying.
+---
+
+## Notes
+- Default DB charset/collation: `utf8mb4` + `utf8mb4_0900_ai_ci`
+- Use SSL for all database connections
+- Allow-list only trusted IPs for RDS
+- For questions, see `Technical_Design_Doc.md` or contact repo owner
