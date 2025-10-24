@@ -20,7 +20,7 @@ It includes features for loan application, risk assessment, repayment tracking, 
   - Cryptocurrency lending  
   - Large-scale institutional loans beyond $5,000  
   - Legal debt collection enforcement
-## 4. Stakeholders
+## 4. User Roles
 - **Borrowers** – individuals seeking loans  
 - **Lenders** – peers and institutions providing funds  
 - **Platform Administrators** – manage users and system operations  
@@ -52,12 +52,38 @@ It includes features for loan application, risk assessment, repayment tracking, 
 - **Security:** JWT-based authentication, password hashing, TLS, audit logging  
 - **Scalability:** Railway hosting with horizontal scaling  
 - **Usability:** Mobile-friendly responsive UI  
-## 7. Assumptions & Dependencies
-- Payment gateway integration (e.g., Stripe, PayPal, or mobile money)  
-- Cloud-hosted SQL database  
-- Document verification APIs for KYC  
-## 8. Success Metrics
-- 90% of loan applications processed without admin intervention  
-- 95% repayment success rate with automated reminders  
-- 99.5% system uptime  
-- High user adoption and satisfaction rates  
+## 7. Use Cases
+- **UC‑1 Borrower applies for loan**  
+- **Trigger:** Borrower clicks “Apply” 
+- **Inputs:** amount, currency, term, purpose, attachments 
+- **Main Flow:** System validates inputs → creates Application with status **SUBMITTED** → enqueues risk assessment → shows confirmation
+- **Outputs:** Application ID, status=SUBMITTED, estimated review time
+
+- **UC‑2 Lender submits offer**  
+- **Inputs:** application_id, amount, APR/fees, expiry
+- **Flow:** Validate caps → create Offer with status **PENDING** → notify Borrower
+- **Outputs:** Offer ID; visible in Borrower’s thread
+
+- **UC‑3 Admin approves & disburses**  
+- **Preconditions:** KYC=**VERIFIED**; total accepted offers ≤ requested amount.  
+- **Flow:** Admin sets Application **APPROVED** → creates **Loan** and initial **Disbursement** → posts ledger entries.  
+- **Outputs:** Loan ID; borrower sees funded balance and schedule.
+
+- **UC‑4 Borrower makes installment repayment**  
+- **Inputs:** loan_id, amount (from gateway)
+- **Flow:** Create **Repayment** → allocate to interest/fees/principal → update schedule status → recalc next due
+- **Outputs:** Receipt; updated outstanding principal and next due date
+
+- **UC‑5 Delinquency report (Admin)**  
+- **Inputs:** as‑of date, product
+- **Flow:** System aggregates overdue installments into DPD buckets  
+- **Outputs:** Table + CSV export
+## 8. Business Rules
+1. **KYC gate:** An application **cannot** be approved or disbursed unless the borrower’s KYC status is **VERIFIED**
+2. **Funding cap:** The sum of **accepted** offers for an application must **not exceed** the requested amount
+3. **Offer expiry:** An offer cannot be accepted after its expiry timestamp
+4. **Schedule integrity:** Repayment allocations must satisfy: payment = principal_applied + interest_applied + fees_applied
+5. **No duplicate reviews:** A reviewer can submit **at most one** review per reviewee
+6. **Currency consistency:** A loan’s currency must match its disbursements and repayments  
+7. **State transitions:** Only Admin can move Application to APPROVED/DENIED and Loan to CHARGED_OFF/CLOSED
+8. **Auditability:** Every financial mutation (disbursement, repayment, reversal) must write a ledger entry with immutable ID and timestamp

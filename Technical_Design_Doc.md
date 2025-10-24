@@ -7,12 +7,13 @@
 - **Author:** Richard Baah, Jose Lamela, Saksham Mehta
 - **Date:** 2025-9-4
 - **Reviewers:** Dev Team
+-**Github** https://github.com/Rich-T-kid/micro-lending 
 ## 2. Introduction
 This document describes the technical implementation for a microlending service. Linked FRD: [Micro-lending FRD](./Fuctional_Req.md)
 ## 3. High-Level Architecture
 Link to: 
 [Architectural Diagram](./Archietecural_Diagram.md)
-### 4.1 Data Model
+## 4.1 Data Model
 **tables**
 - UserAccount(user_id, email, password_hash, full_name, phone, created_at, status)
 - UserRole(role_id, role_name, description)
@@ -41,18 +42,24 @@ Link to:
 - Notification(notification_id, recipient_type, recipient_id, channel, template_key, payload_json, sent_at, status)
 - Document(document_id, owner_type, owner_id, category, file_url, checksum, uploaded_at, verified_at, status)
 - AuditLog(audit_id, actor_type, actor_id, action, entity_type, entity_id, old_values_json, new_values_json, ip_address, user_agent, occurred_at)
-### 4.2  API Design
-- Style: REST (FastAPI)
-- Base URL: /api/v1
-- Auth: JWT Bearer via Authorization: Bearer <token>
-- Content-Type: application/json
-### 4.3 Application Logic
+## 4.2  System Achitecture
+- **Presentation Layer:** minimal web UI (HTML/CSS/JS) consuming REST APIs
+- **Business Layer:** FastAPI service implementing domain logic, validations, and RBAC
+- **Data Layer:** MySQL 8.x with strict referential migrations and indexes
+## 4.3 Application Logic
 - borrowers need to pass credit checks --> data is taken from db and passed through alorithm to determine borrower risk rate
 - borrower payment information is taken and stored in db --> automatic payments to creditor
 - creditor dashboard which displays all different borrowers and information from their invesments
-### 4.4 User Interface
-- Tech: HTML/CSS/JS (lightweight, responsive)
-- Theme: Clean tables + simple forms
+## 3. Interface Design
+- **Web UI:** forms for create/edit; tables with filtering/sorting; CSV export buttons 
+- **API Endpoints (examples):**
+  - `POST /auth/login` — returns JWT
+  - `POST /applications` / `GET /applications?status=SUBMITTED`  
+  - `POST /applications/<built-in function id>/offers`  
+  - `POST /applications/<built-in function id>/approve` (Admin)  
+  - `POST /loans/<built-in function id>/disburse` (Admin)  
+  - `POST /loans/<built-in function id>/repayments`  
+  - `GET /reports/delinquency?as_of=YYYY-MM-DD`
 ## 5. Technlology Stack
 **Frontend** - HMTL, CSS, JS
 **Backend** - Python, Fast API
@@ -64,11 +71,33 @@ Link to:
 - input validation, prepared SQL statements  
 - audit logging for all critical actions  
 - basic compliance with KYC/AML flows  
-## 7. Performance Considerations
-- expected low-to-moderate load
-- SQL indexes on frequent query fields  
-- horizontal scaling possible on Railway if traffic grows  
-- caching for common lookups
+## 7. Database Design Decisions
+## 7.1 Normalization
+- Core entities (users, applications, offers, loans, schedules, repayments, ledger) are modeled in **3NF** to avoid anomalies
+- Limited **JSON** columns for flexible metadata (notes) where structure is variable; not used for relational joins 
+
+## 7.2 Data Types
+- Monetary fields use `DECIMAL(18,2)` (or `(18,4)` in ledger for precision).  
+- `ENUM`/reference tables for statuses (e.g., APPLICATION_STATUS, OFFER_STATUS) for validation and performant filters
+- All timestamps in UTC with `TIMESTAMP`/`DATETIME` as appropriate; `BIGINT` for identifiers where growth is expected
+
+## 7.3 Indexing Strategy
+- Foreign key columns indexed by default; additional composite indexes for high‑cardinality lookups:  
+  - `applications(status, created_at)`  
+  - `offers(application_id, status, created_at)`  
+  - `loans(borrower_id, status)`  
+  - `repayments(loan_id, posted_at)`  
+  - `ledger(loan_id, posted_at)`  
+- Covering indexes are added based on query plans observed in staging. Periodic re‑evaluation
+
+## 7.4 Referential Integrity
+- All cross‑table relations enforce `FOREIGN KEY` constraints
+- Uniqueness: one review per reviewer–reviewee pair; offer IDs unique; user emails unique 
+- Cascades: `ON DELETE RESTRICT` for financials; explicit archival via soft‑delete flags where needed
+
+## 7.5 Transactions & Consistency
+- Multi‑write operations (disbursement + ledger, repayment + allocation) run in a single transaction
+- Idempotency keys ensure repeated webhook posts do not create duplicate rows
 ## 8. Risks & Mitigations
 - **Fraud/abuse** --> KYC checks, role approvals  
 - **Data breach** --> encryption, least privilege access  
@@ -80,7 +109,20 @@ Link to:
 - end-to-end tests for loan lifecycle flows  
 - basic security testing for inputs/authentication  
 ## 10. Deployment & Monitoring
-- CI/CD with GitHub Actions --> Railway deploys  
+- CI/CD with GitHub Actions --> AWS deploys  
 - structured logging and error tracking  
 - basic metrics (API latency, DB health)  
 - alerts for failed deploys or high error rates  
+## 11. Entitlements (Roles → Functions)
+| Function / Endpoint | Borrower | Lender | Admin |
+|---|---|---|---|
+| View own profile & apps | ✅ | ✅ | ✅ |
+| Create loan application | ✅ | ❌ | ❌ |
+| Submit funding offer | ❌ | ✅ | ❌ |
+| Approve/deny application | ❌ | ❌ | ✅ |
+| Disburse / reverse | ❌ | ❌ | ✅ |
+| Post repayment | ✅ | ✅ (if collecting) | ✅ |
+| View portfolio analytics | ❌ | ✅ | ✅ |
+| Manage users/roles | ❌ | ❌ | ✅ |
+| Run delinquency reports | ❌ | ❌ | ✅ |
+| Export CSV | ✅ (own) | ✅ (own) | ✅ (all) |
