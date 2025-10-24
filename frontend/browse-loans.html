@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Browse Loans - MicroLending Platform</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div id="nav-placeholder"></div>
+
+    <div class="container">
+        <div class="page-header">
+            <h1>Browse Investment Opportunities</h1>
+            <p>Invest in loans and earn returns</p>
+        </div>
+
+        <!-- Filters -->
+        <div class="card filters-card">
+            <div class="filters-grid">
+                <div class="form-group">
+                    <label for="filter-purpose">Purpose</label>
+                    <select id="filter-purpose" onchange="applyFilters()">
+                        <option value="">All Purposes</option>
+                        <option value="business">Business</option>
+                        <option value="education">Education</option>
+                        <option value="medical">Medical</option>
+                        <option value="agriculture">Agriculture</option>
+                        <option value="personal">Personal</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="filter-min-amount">Min Amount</label>
+                    <input type="number" id="filter-min-amount" placeholder="$0" onchange="applyFilters()">
+                </div>
+                <div class="form-group">
+                    <label for="filter-max-amount">Max Amount</label>
+                    <input type="number" id="filter-max-amount" placeholder="Any" onchange="applyFilters()">
+                </div>
+                <div class="form-group">
+                    <label for="filter-rate">Min Interest Rate</label>
+                    <input type="number" id="filter-rate" placeholder="0%" step="0.1" onchange="applyFilters()">
+                </div>
+                <div class="form-group">
+                    <label for="filter-term">Max Term</label>
+                    <select id="filter-term" onchange="applyFilters()">
+                        <option value="">Any Term</option>
+                        <option value="12">Up to 12 months</option>
+                        <option value="24">Up to 24 months</option>
+                        <option value="36">Up to 36 months</option>
+                        <option value="60">Up to 60 months</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <button class="btn btn-secondary" onclick="resetFilters()">
+                        <i class="fas fa-redo"></i> Reset
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Summary Stats -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-icon">
+                    <i class="fas fa-file-invoice-dollar"></i>
+                </div>
+                <div class="stat-info">
+                    <h4 id="total-opportunities">0</h4>
+                    <p>Available Opportunities</p>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">
+                    <i class="fas fa-dollar-sign"></i>
+                </div>
+                <div class="stat-info">
+                    <h4 id="total-amount">$0</h4>
+                    <p>Total Loan Amount</p>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">
+                    <i class="fas fa-percentage"></i>
+                </div>
+                <div class="stat-info">
+                    <h4 id="avg-rate">0%</h4>
+                    <p>Average Interest Rate</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Loan Listings -->
+        <div id="loans-container" class="loans-grid">
+            <div class="loading">Loading investment opportunities...</div>
+        </div>
+    </div>
+
+    <!-- Investment Modal -->
+    <div id="investment-modal" class="modal">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h2>Investment Details</h2>
+                <span class="close" onclick="closeInvestmentModal()">&times;</span>
+            </div>
+            <div id="investment-details">
+                <!-- Populated dynamically -->
+            </div>
+            <div id="investment-form-container">
+                <form id="investment-form" onsubmit="handleInvestment(event)">
+                    <div class="form-group">
+                        <label for="investment-amount">Investment Amount</label>
+                        <input type="number" id="investment-amount" step="0.01" min="10" required>
+                        <small>Available to invest: <span id="available-amount">$0</span></small>
+                    </div>
+                    <div class="investment-summary">
+                        <h3>Investment Summary</h3>
+                        <div class="summary-item">
+                            <span>Investment:</span>
+                            <span id="summary-investment">$0.00</span>
+                        </div>
+                        <div class="summary-item">
+                            <span>Interest Rate:</span>
+                            <span id="summary-rate">0%</span>
+                        </div>
+                        <div class="summary-item">
+                            <span>Term:</span>
+                            <span id="summary-term">0 months</span>
+                        </div>
+                        <div class="summary-item highlight">
+                            <span>Expected Return:</span>
+                            <span id="summary-return">$0.00</span>
+                        </div>
+                    </div>
+                    <div class="modal-actions">
+                        <button type="button" class="btn btn-secondary" onclick="closeInvestmentModal()">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Invest Now</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/utils.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/nav.js"></script>
+    <script>
+        let allLoans = [];
+        let filteredLoans = [];
+        let selectedLoan = null;
+
+        async function initBrowseLoans() {
+            await Navigation.init('browse-loans');
+            await loadAvailableLoans();
+        }
+
+        async function loadAvailableLoans() {
+            try {
+                // Get all approved loan applications that need funding
+                allLoans = await LoanAPI.getAvailableLoans();
+                filteredLoans = allLoans;
+                displayLoans();
+                updateStats();
+            } catch (error) {
+                console.error('Failed to load loans:', error);
+                document.getElementById('loans-container').innerHTML = 
+                    '<div class="empty-state">Failed to load investment opportunities</div>';
+            }
+        }
+
+        function displayLoans() {
+            const container = document.getElementById('loans-container');
+            
+            if (filteredLoans.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <i class="fas fa-search"></i>
+                        <p>No investment opportunities match your criteria</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = filteredLoans.map(loan => {
+                const fundingProgress = ((loan.funded_amount || 0) / loan.requested_amount) * 100;
+                const remainingAmount = loan.requested_amount - (loan.funded_amount || 0);
+
+                return `
+                    <div class="loan-card investment-opportunity">
+                        <div class="loan-header">
+                            <div>
+                                <h3>${formatCurrency(loan.requested_amount)}</h3>
+                                <p>${loan.loan_purpose}</p>
+                            </div>
+                            <div class="interest-badge">
+                                ${loan.requested_interest_rate}% APR
+                            </div>
+                        </div>
+                        
+                        <div class="loan-description">
+                            <p>${loan.description ? loan.description.substring(0, 150) + '...' : 'No description provided'}</p>
+                        </div>
+
+                        <div class="funding-progress">
+                            <div class="progress-header">
+                                <span>Funding Progress</span>
+                                <span>${fundingProgress.toFixed(1)}%</span>
+                            </div>
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width: ${fundingProgress}%"></div>
+                            </div>
+                            <div class="progress-stats">
+                                <span>Funded: ${formatCurrency(loan.funded_amount || 0)}</span>
+                                <span>Remaining: ${formatCurrency(remainingAmount)}</span>
+                            </div>
+                        </div>
+
+                        <div class="loan-info">
+                            <div class="info-item">
+                                <i class="fas fa-clock"></i>
+                                <span>${loan.requested_term_months} months</span>
+                            </div>
+                            <div class="info-item">
+                                <i class="fas fa-calendar"></i>
+                                <span>${formatDate(loan.application_date)}</span>
+                            </div>
+                            <div class="info-item">
+                                <i class="fas fa-user"></i>
+                                <span>Borrower #${loan.borrower_id}</span>
+                            </div>
+                        </div>
+
+                        ${loan.collateral_type ? `
+                            <div class="collateral-badge">
+                                <i class="fas fa-shield-alt"></i>
+                                Collateral: ${loan.collateral_type}
+                            </div>
+                        ` : ''}
+
+                        <div class="loan-actions">
+                            <button class="btn btn-secondary btn-sm" onclick="viewLoanDetails(${loan.id})">
+                                View Details
+                            </button>
+                            <button class="btn btn-primary btn-sm" onclick="investInLoan(${loan.id})">
+                                <i class="fas fa-hand-holding-usd"></i> Invest
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function updateStats() {
+            const totalOpportunities = filteredLoans.length;
+            const totalAmount = filteredLoans.reduce((sum, loan) => sum + parseFloat(loan.requested_amount), 0);
+            const avgRate = filteredLoans.length > 0 
+                ? filteredLoans.reduce((sum, loan) => sum + parseFloat(loan.requested_interest_rate), 0) / filteredLoans.length 
+                : 0;
+
+            document.getElementById('total-opportunities').textContent = totalOpportunities;
+            document.getElementById('total-amount').textContent = formatCurrency(totalAmount);
+            document.getElementById('avg-rate').textContent = avgRate.toFixed(2) + '%';
+        }
+
+        function applyFilters() {
+            const purpose = document.getElementById('filter-purpose').value;
+            const minAmount = parseFloat(document.getElementById('filter-min-amount').value) || 0;
+            const maxAmount = parseFloat(document.getElementById('filter-max-amount').value) || Infinity;
+            const minRate = parseFloat(document.getElementById('filter-rate').value) || 0;
+            const maxTerm = parseInt(document.getElementById('filter-term').value) || Infinity;
+
+            filteredLoans = allLoans.filter(loan => {
+                return (!purpose || loan.loan_purpose === purpose) &&
+                       loan.requested_amount >= minAmount &&
+                       loan.requested_amount <= maxAmount &&
+                       loan.requested_interest_rate >= minRate &&
+                       loan.requested_term_months <= maxTerm;
+            });
+
+            displayLoans();
+            updateStats();
+        }
+
+        function resetFilters() {
+            document.getElementById('filter-purpose').value = '';
+            document.getElementById('filter-min-amount').value = '';
+            document.getElementById('filter-max-amount').value = '';
+            document.getElementById('filter-rate').value = '';
+            document.getElementById('filter-term').value = '';
+            filteredLoans = allLoans;
+            displayLoans();
+            updateStats();
+        }
+
+        function viewLoanDetails(loanId) {
+            const loan = allLoans.find(l => l.id === loanId);
+            if (!loan) return;
+
+            const monthlyPayment = calculateMonthlyPayment(
+                loan.requested_amount,
+                loan.requested_interest_rate,
+                loan.requested_term_months
+            );
+
+            const totalRepayment = monthlyPayment * loan.requested_term_months;
+            const totalInterest = totalRepayment - loan.requested_amount;
+
+            const content = `
+                <div class="details-grid">
+                    <div class="detail-item">
+                        <label>Loan Amount:</label>
+                        <span>${formatCurrency(loan.requested_amount)}</span>
+                    </div>
+                    <div class="detail-item">
+                        <label>Purpose:</label>
+                        <span>${loan.loan_purpose}</span>
+                    </div>
+                    <div class="detail-item">
+                        <label>Interest Rate:</label>
+                        <span>${loan.requested_interest_rate}% APR</span>
+                    </div>
+                    <div class="detail-item">
+                        <label>Term:</label>
+                        <span>${loan.requested_term_months} months</span>
+                    </div>
+                    <div class="detail-item">
+                        <label>Monthly Payment:</label>
+                        <span>${formatCurrency(monthlyPayment)}</span>
+                    </div>
+                    <div class="detail-item">
+                        <label>Total Interest:</label>
+                        <span>${formatCurrency(totalInterest)}</span>
+                    </div>
+                    <div class="detail-item full-width">
+                        <label>Description:</label>
+                        <p>${loan.description || 'No description provided'}</p>
+                    </div>
+                    ${loan.collateral_type ? `
+                        <div class="detail-item">
+                            <label>Collateral Type:</label>
+                            <span>${loan.collateral_type}</span>
+                        </div>
+                        <div class="detail-item">
+                            <label>Collateral Value:</label>
+                            <span>${formatCurrency(loan.collateral_value)}</span>
+                        </div>
+                    ` : ''}
+                    <div class="detail-item full-width">
+                        <label>Application Date:</label>
+                        <span>${formatDateTime(loan.application_date)}</span>
+                    </div>
+                </div>
+            `;
+
+            document.getElementById('investment-details').innerHTML = content;
+            document.getElementById('investment-form-container').style.display = 'none';
+            document.getElementById('investment-modal').style.display = 'block';
+        }
+
+        async function investInLoan(loanId) {
+            selectedLoan = allLoans.find(l => l.id === loanId);
+            if (!selectedLoan) return;
+
+            // Get user's wallet balance
+            try {
+                const wallets = await TransactionAPI.getWallets();
+                const balance = wallets.length > 0 ? wallets[0].balance : 0;
+                
+                const remainingAmount = selectedLoan.requested_amount - (selectedLoan.funded_amount || 0);
+                document.getElementById('available-amount').textContent = formatCurrency(remainingAmount);
+                document.getElementById('investment-amount').max = Math.min(balance, remainingAmount);
+                
+                // Show investment form
+                viewLoanDetails(loanId);
+                document.getElementById('investment-form-container').style.display = 'block';
+                
+                // Setup investment calculator
+                document.getElementById('investment-amount').addEventListener('input', updateInvestmentSummary);
+                updateInvestmentSummary();
+            } catch (error) {
+                showToast('Failed to load wallet information', 'error');
+            }
+        }
+
+        function updateInvestmentSummary() {
+            if (!selectedLoan) return;
+
+            const amount = parseFloat(document.getElementById('investment-amount').value) || 0;
+            const rate = selectedLoan.requested_interest_rate;
+            const term = selectedLoan.requested_term_months;
+
+            const expectedReturn = (amount * (rate / 100) * (term / 12));
+
+            document.getElementById('summary-investment').textContent = formatCurrency(amount);
+            document.getElementById('summary-rate').textContent = rate + '%';
+            document.getElementById('summary-term').textContent = term + ' months';
+            document.getElementById('summary-return').textContent = formatCurrency(expectedReturn);
+        }
+
+        function closeInvestmentModal() {
+            document.getElementById('investment-modal').style.display = 'none';
+            selectedLoan = null;
+        }
+
+        async function handleInvestment(event) {
+            event.preventDefault();
+            
+            const amount = parseFloat(document.getElementById('investment-amount').value);
+
+            try {
+                await LoanAPI.investInLoan(selectedLoan.id, amount);
+                showToast('Investment successful!', 'success');
+                closeInvestmentModal();
+                await loadAvailableLoans();
+            } catch (error) {
+                showToast('Investment failed: ' + error.message, 'error');
+            }
+        }
+
+        // Close modal on outside click
+        window.onclick = function(event) {
+            const modal = document.getElementById('investment-modal');
+            if (event.target === modal) {
+                closeInvestmentModal();
+            }
+        }
+
+        window.addEventListener('DOMContentLoaded', initBrowseLoans);
+    </script>
+</body>
+</html>

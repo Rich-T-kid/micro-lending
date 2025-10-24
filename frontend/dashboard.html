@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - MicroLending</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <a href="dashboard.html" class="sidebar-logo">
+                    <span>💰</span>
+                    <span>MicroLending</span>
+                </a>
+            </div>
+            
+            <nav class="sidebar-nav">
+                <ul>
+                    <li class="nav-item">
+                        <a href="dashboard.html" class="nav-link active">
+                            <span class="nav-icon">📊</span>
+                            <span>Dashboard</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="wallet.html" class="nav-link">
+                            <span class="nav-icon">💳</span>
+                            <span>My Wallet</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="my-loans.html" class="nav-link">
+                            <span class="nav-icon">📄</span>
+                            <span>My Loans</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="browse-loans.html" class="nav-link">
+                            <span class="nav-icon">🔍</span>
+                            <span>Browse Loans</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="portfolio.html" class="nav-link">
+                            <span class="nav-icon">📈</span>
+                            <span>Portfolio</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="#" class="nav-link" onclick="logout()">
+                            <span class="nav-icon">🚪</span>
+                            <span>Logout</span>
+                        </a>
+                    </li>
+                </ul>
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Header -->
+            <header class="header">
+                <div class="header-left">
+                    <h1>Dashboard</h1>
+                </div>
+                <div class="header-right">
+                    <div class="notification-icon">
+                        <span>🔔</span>
+                        <span class="notification-badge">3</span>
+                    </div>
+                    <div class="user-profile">
+                        <div class="user-avatar" id="user-avatar">U</div>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Content Area -->
+            <main class="content">
+                <!-- Stats Grid -->
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <span class="stat-title">Total Balance</span>
+                            <div class="stat-icon" style="background-color: #e3f2fd;">
+                                <span>💵</span>
+                            </div>
+                        </div>
+                        <div class="stat-value" id="total-balance">$0</div>
+                        <div class="stat-change positive">
+                            <span>↑</span>
+                            <span>+8.2% from last month</span>
+                        </div>
+                    </div>
+
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <span class="stat-title">Active Loans</span>
+                            <div class="stat-icon" style="background-color: #fff3e0;">
+                                <span>📋</span>
+                            </div>
+                        </div>
+                        <div class="stat-value" id="active-loans">0</div>
+                        <div class="stat-change">
+                            <span>No change</span>
+                        </div>
+                    </div>
+
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <span class="stat-title">Total Invested</span>
+                            <div class="stat-icon" style="background-color: #e8f5e9;">
+                                <span>💰</span>
+                            </div>
+                        </div>
+                        <div class="stat-value" id="total-invested">$0</div>
+                        <div class="stat-change positive">
+                            <span>↑</span>
+                            <span>+15.3% this quarter</span>
+                        </div>
+                    </div>
+
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <span class="stat-title">Credit Score</span>
+                            <div class="stat-icon" style="background-color: #f3e5f5;">
+                                <span>⭐</span>
+                            </div>
+                        </div>
+                        <div class="stat-value" id="credit-score">780</div>
+                        <div class="stat-change positive">
+                            <span>↑</span>
+                            <span>Excellent</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Quick Actions -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">Quick Actions</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="quick-actions">
+                            <button class="action-btn" onclick="window.location.href='apply-loan.html'">
+                                <div class="action-btn-icon">📝</div>
+                                <div class="action-btn-title">Apply for Loan</div>
+                                <div class="action-btn-desc">Start a new application</div>
+                            </button>
+                            <button class="action-btn" onclick="window.location.href='browse-loans.html'">
+                                <div class="action-btn-icon">🏦</div>
+                                <div class="action-btn-title">Start Lending</div>
+                                <div class="action-btn-desc">Earn up to 15% return</div>
+                            </button>
+                            <button class="action-btn" onclick="window.location.href='education.html'">
+                                <div class="action-btn-icon">📚</div>
+                                <div class="action-btn-title">Financial Education</div>
+                                <div class="action-btn-desc">Improve your finance skills</div>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Investment Opportunities -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">Investment Opportunities</h2>
+                        <a href="browse-loans.html" class="btn btn-outline btn-sm">View All →</a>
+                    </div>
+                    <div class="card-body">
+                        <div class="loan-grid" id="investment-opportunities">
+                            <!-- Loan cards will be loaded here -->
+                            <div class="spinner"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Portfolio Performance -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">Portfolio Performance</h2>
+                        <select class="form-control" style="width: auto;">
+                            <option>Last 30 Days</option>
+                            <option>Last 90 Days</option>
+                            <option>Last Year</option>
+                        </select>
+                    </div>
+                    <div class="card-body">
+                        <div class="stats-grid">
+                            <div class="stat-card">
+                                <div class="stat-title">Average Return</div>
+                                <div class="stat-value">9.2%</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-title">On-Time Payments</div>
+                                <div class="stat-value">98.5%</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-title">Active Investments</div>
+                                <div class="stat-value">24</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- My Active Loans -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">My Active Loans</h2>
+                        <a href="my-loans.html" class="btn btn-outline btn-sm">See All →</a>
+                    </div>
+                    <div class="card-body">
+                        <div id="active-loans-list">
+                            <!-- Active loans will be loaded here -->
+                            <div class="spinner"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Recent Activity -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">Recent Activity</h2>
+                        <a href="#" class="auth-link">View All</a>
+                    </div>
+                    <div class="card-body">
+                        <div id="recent-activity">
+                            <!-- Recent activity will be loaded here -->
+                            <p class="text-muted">Loading recent activity...</p>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script src="js/utils.js"></script>
+    <script>
+        // Protect the page - redirect to login if not authenticated
+        if (!requireAuth()) {
+            // requireAuth already handles the redirect
+        }
+
+        const userId = getCurrentUserId();
+
+        // Initialize dashboard
+        async function initDashboard() {
+            try {
+                // Get user profile to display name
+                const userProfile = await UserAPI.getProfile(userId);
+                if (userProfile) {
+                    const initials = getInitials(userProfile.first_name, userProfile.last_name);
+                    document.getElementById('user-avatar').textContent = initials;
+                }
+
+                // Load wallet accounts
+                await loadWalletData();
+
+                // Load user loans
+                await loadUserLoans();
+
+                // Load investment opportunities (sample loan applications)
+                await loadInvestmentOpportunities();
+
+                // Load recent activity
+                loadRecentActivity();
+
+            } catch (error) {
+                console.error('Error initializing dashboard:', error);
+                showToast('Failed to load dashboard data', 'danger');
+            }
+        }
+
+        // Load wallet data
+        async function loadWalletData() {
+            try {
+                const accounts = await UserAPI.getWalletAccounts(userId);
+                if (accounts && accounts.length > 0) {
+                    const totalBalance = accounts.reduce((sum, account) => 
+                        sum + parseFloat(account.available_balance || 0), 0);
+                    document.getElementById('total-balance').textContent = formatCurrency(totalBalance);
+                } else {
+                    document.getElementById('total-balance').textContent = formatCurrency(0);
+                }
+            } catch (error) {
+                console.error('Error loading wallet data:', error);
+                document.getElementById('total-balance').textContent = formatCurrency(0);
+            }
+        }
+
+        // Load user loans
+        async function loadUserLoans() {
+            try {
+                const response = await LoanAPI.getUserLoans(userId, { status: 'ACTIVE' });
+                const loans = response.data || [];
+                
+                document.getElementById('active-loans').textContent = loans.length;
+
+                const loansList = document.getElementById('active-loans-list');
+                if (loans.length === 0) {
+                    loansList.innerHTML = '<p class="text-muted">No active loans at the moment.</p>';
+                } else {
+                    loansList.innerHTML = loans.slice(0, 3).map(loan => `
+                        <div class="loan-card">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <h3 class="loan-title">Loan #${loan.loan_id}</h3>
+                                <span class="loan-badge grade-b">Active</span>
+                            </div>
+                            <div class="loan-details">
+                                <div class="loan-detail-item">
+                                    <span class="loan-detail-label">Amount</span>
+                                    <span class="loan-detail-value">${formatCurrency(loan.principal_amount)}</span>
+                                </div>
+                                <div class="loan-detail-item">
+                                    <span class="loan-detail-label">Next Payment</span>
+                                    <span class="loan-detail-value">${formatDate(loan.next_payment_due)}</span>
+                                </div>
+                                <div class="loan-detail-item">
+                                    <span class="loan-detail-label">Remaining</span>
+                                    <span class="loan-detail-value">${formatCurrency(loan.balance_remaining)}</span>
+                                </div>
+                                <div class="loan-detail-item">
+                                    <span class="loan-detail-label">Rate</span>
+                                    <span class="loan-detail-value">${loan.interest_rate}%</span>
+                                </div>
+                            </div>
+                            <button class="btn btn-primary btn-sm btn-block mt-2">Make Payment</button>
+                        </div>
+                    `).join('');
+                }
+            } catch (error) {
+                console.error('Error loading user loans:', error);
+                document.getElementById('active-loans').textContent = '0';
+                document.getElementById('active-loans-list').innerHTML = 
+                    '<p class="text-muted">Unable to load loans at this time.</p>';
+            }
+        }
+
+        // Load investment opportunities
+        async function loadInvestmentOpportunities() {
+            const container = document.getElementById('investment-opportunities');
+            
+            try {
+                // In a real app, you'd fetch open loan applications
+                // For now, we'll show sample data
+                const sampleLoans = [
+                    {
+                        id: 1,
+                        title: 'Small Business Expansion',
+                        description: 'Coffee shop equipment and inventory funding with 3-year track record',
+                        amount: 3500,
+                        rate: 7.5,
+                        term: 18,
+                        grade: 'A',
+                        funded: 75
+                    },
+                    {
+                        id: 2,
+                        title: 'Medical School Tuition',
+                        description: 'Final year medical school tuition with job offer post-graduation',
+                        amount: 8000,
+                        rate: 4.5,
+                        term: 24,
+                        grade: 'B',
+                        funded: 45
+                    }
+                ];
+
+                container.innerHTML = sampleLoans.map(loan => `
+                    <div class="loan-card">
+                        <div class="loan-header">
+                            <div>
+                                <h3 class="loan-title">${loan.title}</h3>
+                                <p class="loan-description">${truncateText(loan.description, 80)}</p>
+                            </div>
+                            <span class="loan-badge grade-${loan.grade.toLowerCase()}">${loan.grade} Grade</span>
+                        </div>
+                        <div class="loan-details">
+                            <div class="loan-detail-item">
+                                <span class="loan-detail-label">Amount</span>
+                                <span class="loan-detail-value">${formatCurrency(loan.amount)}</span>
+                            </div>
+                            <div class="loan-detail-item">
+                                <span class="loan-detail-label">Rate</span>
+                                <span class="loan-detail-value">${loan.rate}%</span>
+                            </div>
+                            <div class="loan-detail-item">
+                                <span class="loan-detail-label">Term</span>
+                                <span class="loan-detail-value">${loan.term} months</span>
+                            </div>
+                            <div class="loan-detail-item">
+                                <span class="loan-detail-label">Purpose</span>
+                                <span class="loan-detail-value">${loan.funded}%</span>
+                            </div>
+                        </div>
+                        <div class="progress-bar-container">
+                            <div class="progress-bar" style="width: ${loan.funded}%"></div>
+                        </div>
+                        <button class="btn btn-success btn-block">Invest $25+</button>
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('Error loading investment opportunities:', error);
+                container.innerHTML = '<p class="text-muted">No investment opportunities available at this time.</p>';
+            }
+        }
+
+        // Load recent activity
+        function loadRecentActivity() {
+            const activityContainer = document.getElementById('recent-activity');
+            
+            // Sample activity data
+            const activities = [
+                { type: 'payment', text: 'Payment received', amount: '$120.50', time: '2 hours ago', icon: '✅' },
+                { type: 'investment', text: 'Investment made', amount: '$500.00', time: '1 day ago', icon: '💸' },
+                { type: 'kyc', text: 'Identity verified', amount: '', time: '3 days ago', icon: '✓' },
+                { type: 'reminder', text: 'Payment reminder', amount: '$85.00', time: '2 days ago', icon: '🔔' }
+            ];
+
+            activityContainer.innerHTML = activities.map(activity => `
+                <div class="d-flex justify-content-between align-items-center mb-2" style="padding: 0.75rem; border-bottom: 1px solid var(--border-color);">
+                    <div class="d-flex align-items-center gap-2">
+                        <span style="font-size: 1.5rem;">${activity.icon}</span>
+                        <div>
+                            <div>${activity.text}</div>
+                            <small class="text-muted">${activity.time}</small>
+                        </div>
+                    </div>
+                    ${activity.amount ? `<strong>${activity.amount}</strong>` : ''}
+                </div>
+            `).join('');
+        }
+
+        // Logout function
+        function logout() {
+            if (confirm('Are you sure you want to logout?')) {
+                AuthAPI.logout();
+            }
+        }
+
+        // Initialize dashboard on page load
+        initDashboard();
+    </script>
+</body>
+</html>

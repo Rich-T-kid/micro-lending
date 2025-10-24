@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wallet - MicroLending Platform</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div id="nav-placeholder"></div>
+
+    <div class="container">
+        <div class="page-header">
+            <h1>My Wallet</h1>
+            <p>Manage your funds and transactions</p>
+        </div>
+
+        <!-- Wallet Balance Card -->
+        <div class="wallet-balance-card">
+            <div class="balance-info">
+                <h3>Available Balance</h3>
+                <div class="balance-amount" id="wallet-balance">$0.00</div>
+                <p class="balance-currency" id="wallet-currency">USD</p>
+            </div>
+            <div class="balance-actions">
+                <button class="btn btn-primary" onclick="showDepositModal()">
+                    <i class="fas fa-plus"></i> Deposit
+                </button>
+                <button class="btn btn-secondary" onclick="showWithdrawModal()">
+                    <i class="fas fa-minus"></i> Withdraw
+                </button>
+            </div>
+        </div>
+
+        <!-- Quick Stats -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-icon">
+                    <i class="fas fa-arrow-down"></i>
+                </div>
+                <div class="stat-info">
+                    <h4 id="total-deposits">$0.00</h4>
+                    <p>Total Deposits</p>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">
+                    <i class="fas fa-arrow-up"></i>
+                </div>
+                <div class="stat-info">
+                    <h4 id="total-withdrawals">$0.00</h4>
+                    <p>Total Withdrawals</p>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">
+                    <i class="fas fa-exchange-alt"></i>
+                </div>
+                <div class="stat-info">
+                    <h4 id="total-transactions">0</h4>
+                    <p>Transactions</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Transaction History -->
+        <div class="card">
+            <div class="card-header">
+                <h2>Transaction History</h2>
+                <div class="filter-controls">
+                    <select id="transaction-filter" onchange="filterTransactions()">
+                        <option value="all">All Transactions</option>
+                        <option value="deposit">Deposits</option>
+                        <option value="withdrawal">Withdrawals</option>
+                        <option value="loan_disbursement">Loan Disbursements</option>
+                        <option value="repayment">Repayments</option>
+                    </select>
+                </div>
+            </div>
+            <div class="transaction-list" id="transaction-list">
+                <div class="loading">Loading transactions...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Deposit Modal -->
+    <div id="deposit-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Deposit Funds</h2>
+                <span class="close" onclick="closeDepositModal()">&times;</span>
+            </div>
+            <form id="deposit-form" onsubmit="handleDeposit(event)">
+                <div class="form-group">
+                    <label for="deposit-amount">Amount</label>
+                    <input type="number" id="deposit-amount" step="0.01" min="10" required>
+                </div>
+                <div class="form-group">
+                    <label for="deposit-method">Payment Method</label>
+                    <select id="deposit-method" required>
+                        <option value="bank_transfer">Bank Transfer</option>
+                        <option value="credit_card">Credit Card</option>
+                        <option value="debit_card">Debit Card</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="deposit-description">Description (Optional)</label>
+                    <input type="text" id="deposit-description" placeholder="e.g., Monthly deposit">
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeDepositModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Deposit</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Withdraw Modal -->
+    <div id="withdraw-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Withdraw Funds</h2>
+                <span class="close" onclick="closeWithdrawModal()">&times;</span>
+            </div>
+            <form id="withdraw-form" onsubmit="handleWithdraw(event)">
+                <div class="form-group">
+                    <label for="withdraw-amount">Amount</label>
+                    <input type="number" id="withdraw-amount" step="0.01" min="10" required>
+                    <small>Available: <span id="available-balance">$0.00</span></small>
+                </div>
+                <div class="form-group">
+                    <label for="withdraw-method">Withdrawal Method</label>
+                    <select id="withdraw-method" required>
+                        <option value="bank_transfer">Bank Transfer</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="withdraw-description">Description (Optional)</label>
+                    <input type="text" id="withdraw-description" placeholder="e.g., Emergency withdrawal">
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeWithdrawModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Withdraw</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="js/utils.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/nav.js"></script>
+    <script>
+        let allTransactions = [];
+        let walletData = null;
+
+        async function initWallet() {
+            await Navigation.init('wallet');
+            await loadWalletData();
+            await loadTransactions();
+        }
+
+        async function loadWalletData() {
+            try {
+                const wallets = await TransactionAPI.getWallets();
+                if (wallets.length > 0) {
+                    walletData = wallets[0];
+                    document.getElementById('wallet-balance').textContent = formatCurrency(walletData.balance);
+                    document.getElementById('wallet-currency').textContent = walletData.currency_code;
+                    document.getElementById('available-balance').textContent = formatCurrency(walletData.balance);
+                }
+            } catch (error) {
+                console.error('Failed to load wallet:', error);
+                showToast('Failed to load wallet information', 'error');
+            }
+        }
+
+        async function loadTransactions() {
+            try {
+                const transactions = await TransactionAPI.getTransactions();
+                allTransactions = transactions;
+                displayTransactions(transactions);
+                updateStats(transactions);
+            } catch (error) {
+                console.error('Failed to load transactions:', error);
+                document.getElementById('transaction-list').innerHTML = 
+                    '<div class="empty-state">Failed to load transactions</div>';
+            }
+        }
+
+        function displayTransactions(transactions) {
+            const container = document.getElementById('transaction-list');
+            
+            if (transactions.length === 0) {
+                container.innerHTML = '<div class="empty-state">No transactions yet</div>';
+                return;
+            }
+
+            container.innerHTML = transactions.map(tx => `
+                <div class="transaction-item ${tx.transaction_type}">
+                    <div class="transaction-icon">
+                        <i class="fas ${getTransactionIcon(tx.transaction_type)}"></i>
+                    </div>
+                    <div class="transaction-details">
+                        <h4>${formatTransactionType(tx.transaction_type)}</h4>
+                        <p>${tx.description || 'No description'}</p>
+                        <small>${formatDateTime(tx.transaction_date)}</small>
+                    </div>
+                    <div class="transaction-amount ${tx.transaction_type}">
+                        ${tx.transaction_type.includes('deposit') || tx.transaction_type.includes('disbursement') ? '+' : '-'}
+                        ${formatCurrency(tx.amount)}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function updateStats(transactions) {
+            const deposits = transactions.filter(tx => 
+                tx.transaction_type === 'deposit' || tx.transaction_type === 'loan_disbursement'
+            );
+            const withdrawals = transactions.filter(tx => 
+                tx.transaction_type === 'withdrawal' || tx.transaction_type === 'repayment'
+            );
+
+            const totalDeposits = deposits.reduce((sum, tx) => sum + parseFloat(tx.amount), 0);
+            const totalWithdrawals = withdrawals.reduce((sum, tx) => sum + parseFloat(tx.amount), 0);
+
+            document.getElementById('total-deposits').textContent = formatCurrency(totalDeposits);
+            document.getElementById('total-withdrawals').textContent = formatCurrency(totalWithdrawals);
+            document.getElementById('total-transactions').textContent = transactions.length;
+        }
+
+        function filterTransactions() {
+            const filter = document.getElementById('transaction-filter').value;
+            const filtered = filter === 'all' 
+                ? allTransactions 
+                : allTransactions.filter(tx => tx.transaction_type === filter);
+            displayTransactions(filtered);
+        }
+
+        function getTransactionIcon(type) {
+            const icons = {
+                'deposit': 'fa-arrow-down',
+                'withdrawal': 'fa-arrow-up',
+                'loan_disbursement': 'fa-hand-holding-usd',
+                'repayment': 'fa-credit-card',
+                'investment': 'fa-chart-line'
+            };
+            return icons[type] || 'fa-exchange-alt';
+        }
+
+        function formatTransactionType(type) {
+            return type.split('_').map(word => 
+                word.charAt(0).toUpperCase() + word.slice(1)
+            ).join(' ');
+        }
+
+        function showDepositModal() {
+            document.getElementById('deposit-modal').style.display = 'block';
+        }
+
+        function closeDepositModal() {
+            document.getElementById('deposit-modal').style.display = 'none';
+            document.getElementById('deposit-form').reset();
+        }
+
+        function showWithdrawModal() {
+            document.getElementById('withdraw-modal').style.display = 'block';
+        }
+
+        function closeWithdrawModal() {
+            document.getElementById('withdraw-modal').style.display = 'none';
+            document.getElementById('withdraw-form').reset();
+        }
+
+        async function handleDeposit(event) {
+            event.preventDefault();
+            
+            const amount = parseFloat(document.getElementById('deposit-amount').value);
+            const description = document.getElementById('deposit-description').value;
+
+            try {
+                await TransactionAPI.deposit(walletData.id, amount, description);
+                showToast('Deposit successful!', 'success');
+                closeDepositModal();
+                await loadWalletData();
+                await loadTransactions();
+            } catch (error) {
+                showToast('Deposit failed: ' + error.message, 'error');
+            }
+        }
+
+        async function handleWithdraw(event) {
+            event.preventDefault();
+            
+            const amount = parseFloat(document.getElementById('withdraw-amount').value);
+            const description = document.getElementById('withdraw-description').value;
+
+            if (amount > walletData.balance) {
+                showToast('Insufficient balance', 'error');
+                return;
+            }
+
+            try {
+                await TransactionAPI.withdraw(walletData.id, amount, description);
+                showToast('Withdrawal successful!', 'success');
+                closeWithdrawModal();
+                await loadWalletData();
+                await loadTransactions();
+            } catch (error) {
+                showToast('Withdrawal failed: ' + error.message, 'error');
+            }
+        }
+
+        // Close modals when clicking outside
+        window.onclick = function(event) {
+            const depositModal = document.getElementById('deposit-modal');
+            const withdrawModal = document.getElementById('withdraw-modal');
+            if (event.target === depositModal) {
+                closeDepositModal();
+            }
+            if (event.target === withdrawModal) {
+                closeWithdrawModal();
+            }
+        }
+
+        // Initialize on load
+        window.addEventListener('DOMContentLoaded', initWallet);
+    </script>
+</body>
+</html>

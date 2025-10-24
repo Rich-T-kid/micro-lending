@@ -1,5 +1,6 @@
 from typing import Union, List, Optional
 from fastapi import FastAPI, HTTPException, Depends, status, Query, Path
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import models
 import uuid
@@ -15,6 +16,15 @@ app = FastAPI(
     title="Micro-Lending API",
     description="A simple micro-lending platform API",
     version="1.0.0"
+)
+
+# Add CORS middleware to allow frontend to communicate with API
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://localhost:5173", "http://localhost:5174"],  # React dev servers
+    allow_credentials=True,
+    allow_methods=["*"],  # Allow all HTTP methods
+    allow_headers=["*"],  # Allow all headers
 )
 
 @app.get("/")

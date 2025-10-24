@@ -5,31 +5,33 @@ from sqlalchemy.orm import sessionmaker, declarative_base, relationship
 from datetime import datetime, date
 from decimal import Decimal as PyDecimal
 from typing import Optional, Union
+import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Create declarative base
 Base = declarative_base()
 
 class Database:
     def __init__(self):
-        # MySQL connection details
-        # TODO: read from .env later
-        MYSQL_HOST = "micro-lending.cmvo24soe2b0.us-east-1.rds.amazonaws.com"
-        MYSQL_PORT = "3306"
-        MYSQL_DATABASE = "microlending"
-        MYSQL_USER = "admin"
-        MYSQL_PASSWORD = "micropass"
+        # MySQL connection details from environment variables
+        MYSQL_HOST = os.getenv("MYSQL_HOST", "micro-lending.cmvo24soe2b0.us-east-1.rds.amazonaws.com")
+        MYSQL_PORT = os.getenv("MYSQL_PORT", "3306")
+        MYSQL_DATABASE = os.getenv("MYSQL_DATABASE", "microlending")
+        MYSQL_USER = os.getenv("MYSQL_USER", "admin")
+        MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "micropass")
         
         # Create engine
         DATABASE_URL = f"mysql+pymysql://{MYSQL_USER}:{MYSQL_PASSWORD}@{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DATABASE}"
-        self.engine = create_engine(DATABASE_URL)
+        self.engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=3600)
         self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
         self._session = None
     
     def get_session(self):
-        """Get database session, create if it doesn't exist"""
-        if self._session is None:
-            self._session = self.SessionLocal()
-        return self._session
+        """Get database session, create new one each time for thread safety"""
+        return self.SessionLocal()
 
 
 # Database Models

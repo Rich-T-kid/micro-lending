@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - MicroLending Platform</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="auth-container">
+        <div class="auth-card">
+            <div class="auth-header">
+                <h1 class="auth-title">Welcome Back</h1>
+                <p class="auth-subtitle">Sign in to your MicroLending account</p>
+            </div>
+
+            <div id="alert-container"></div>
+
+            <form id="login-form">
+                <div class="form-group">
+                    <label for="email" class="form-label">Email Address</label>
+                    <input 
+                        type="email" 
+                        id="email" 
+                        class="form-control" 
+                        placeholder="your.email@example.com"
+                        required
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label for="password" class="form-label">Password</label>
+                    <input 
+                        type="password" 
+                        id="password" 
+                        class="form-control" 
+                        placeholder="Enter your password"
+                        required
+                    >
+                </div>
+
+                <div class="form-group d-flex justify-content-between align-items-center">
+                    <label class="d-flex align-items-center gap-1">
+                        <input type="checkbox" id="remember-me">
+                        <span>Remember me</span>
+                    </label>
+                    <a href="#" class="auth-link">Forgot password?</a>
+                </div>
+
+                <button type="submit" class="btn btn-primary btn-block" id="login-btn">
+                    Sign In
+                </button>
+            </form>
+
+            <div class="auth-footer">
+                Don't have an account? <a href="register.html" class="auth-link">Sign up</a>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script src="js/utils.js"></script>
+    <script>
+        // Check if already logged in
+        if (isAuthenticated()) {
+            window.location.href = '/dashboard.html';
+        }
+
+        // Handle login form submission
+        document.getElementById('login-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const loginBtn = document.getElementById('login-btn');
+            const alertContainer = document.getElementById('alert-container');
+            
+            // Clear previous alerts
+            alertContainer.innerHTML = '';
+            
+            // Disable button and show loading state
+            loginBtn.disabled = true;
+            loginBtn.textContent = 'Signing in...';
+            
+            try {
+                // Call login API
+                const response = await AuthAPI.login(email, password);
+                
+                if (response && response.access_token) {
+                    // Parse the JWT to get user info
+                    const tokenData = parseJWT(response.access_token);
+                    
+                    // Store user info
+                    if (tokenData && tokenData.user_id) {
+                        localStorage.setItem('user_id', tokenData.user_id);
+                        localStorage.setItem('user_email', tokenData.email || email);
+                    }
+                    
+                    // Show success message
+                    showToast('Login successful! Redirecting...', 'success');
+                    
+                    // Redirect to dashboard after short delay
+                    setTimeout(() => {
+                        window.location.href = '/dashboard.html';
+                    }, 1000);
+                } else {
+                    throw new Error('Invalid response from server');
+                }
+            } catch (error) {
+                console.error('Login error:', error);
+                
+                // Show error message
+                alertContainer.innerHTML = `
+                    <div class="alert alert-danger">
+                        ${error.message || 'Login failed. Please check your credentials and try again.'}
+                    </div>
+                `;
+                
+                // Re-enable button
+                loginBtn.disabled = false;
+                loginBtn.textContent = 'Sign In';
+            }
+        });
+
+        // Demo login button (for testing)
+        const demoLoginDiv = document.createElement('div');
+        demoLoginDiv.className = 'text-center mt-3';
+        demoLoginDiv.innerHTML = `
+            <p class="text-muted">Demo Credentials</p>
+            <button class="btn btn-outline btn-sm" onclick="fillDemoCredentials()">Use Demo Account</button>
+        `;
+        document.querySelector('.auth-footer').after(demoLoginDiv);
+
+        function fillDemoCredentials() {
+            document.getElementById('email').value = 'demo@microlending.com';
+            document.getElementById('password').value = 'demo123';
+            showToast('Demo credentials filled! Click Sign In to continue.', 'info');
+        }
+    </script>
+</body>
+</html>

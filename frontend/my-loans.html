@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Loans - MicroLending Platform</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div id="nav-placeholder"></div>
+
+    <div class="container">
+        <div class="page-header">
+            <h1>My Loans</h1>
+            <p>View and manage your loan applications and active loans</p>
+        </div>
+
+        <!-- Tabs -->
+        <div class="tabs">
+            <button class="tab-btn active" onclick="switchTab('applications')">
+                <i class="fas fa-file-alt"></i> Applications
+            </button>
+            <button class="tab-btn" onclick="switchTab('active')">
+                <i class="fas fa-check-circle"></i> Active Loans
+            </button>
+            <button class="tab-btn" onclick="switchTab('completed')">
+                <i class="fas fa-history"></i> Completed
+            </button>
+        </div>
+
+        <!-- Applications Tab -->
+        <div id="applications-tab" class="tab-content active">
+            <div class="card">
+                <div class="card-header">
+                    <h2>Loan Applications</h2>
+                    <button class="btn btn-primary" onclick="window.location.href='apply-loan.html'">
+                        <i class="fas fa-plus"></i> New Application
+                    </button>
+                </div>
+                <div id="applications-list" class="loans-list">
+                    <div class="loading">Loading applications...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Active Loans Tab -->
+        <div id="active-tab" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <h2>Active Loans</h2>
+                </div>
+                <div id="active-loans-list" class="loans-list">
+                    <div class="loading">Loading active loans...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Completed Tab -->
+        <div id="completed-tab" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <h2>Completed Loans</h2>
+                </div>
+                <div id="completed-loans-list" class="loans-list">
+                    <div class="loading">Loading completed loans...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loan Details Modal -->
+    <div id="loan-details-modal" class="modal">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h2>Loan Details</h2>
+                <span class="close" onclick="closeLoanDetailsModal()">&times;</span>
+            </div>
+            <div id="loan-details-content">
+                <!-- Will be populated dynamically -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Make Payment Modal -->
+    <div id="payment-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Make Payment</h2>
+                <span class="close" onclick="closePaymentModal()">&times;</span>
+            </div>
+            <form id="payment-form" onsubmit="handlePayment(event)">
+                <div class="form-group">
+                    <label for="payment-amount">Payment Amount</label>
+                    <input type="number" id="payment-amount" step="0.01" min="0" required>
+                    <small>Next payment due: <span id="next-payment-amount">$0.00</span></small>
+                </div>
+                <div class="form-group">
+                    <label for="payment-method">Payment Method</label>
+                    <select id="payment-method" required>
+                        <option value="wallet">Wallet Balance</option>
+                        <option value="bank_transfer">Bank Transfer</option>
+                        <option value="credit_card">Credit Card</option>
+                    </select>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closePaymentModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Submit Payment</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="js/utils.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/nav.js"></script>
+    <script>
+        let applications = [];
+        let activeLoans = [];
+        let completedLoans = [];
+        let currentLoan = null;
+
+        async function initMyLoans() {
+            await Navigation.init('my-loans');
+            await loadAllLoans();
+        }
+
+        async function loadAllLoans() {
+            try {
+                // Load applications
+                applications = await LoanAPI.getMyApplications();
+                displayApplications();
+
+                // Load active loans
+                const allLoans = await LoanAPI.getMyLoans();
+                activeLoans = allLoans.filter(loan => loan.status === 'active');
+                completedLoans = allLoans.filter(loan => loan.status === 'completed' || loan.status === 'closed');
+                
+                displayActiveLoans();
+                displayCompletedLoans();
+            } catch (error) {
+                console.error('Failed to load loans:', error);
+                showToast('Failed to load loans', 'error');
+            }
+        }
+
+        function displayApplications() {
+            const container = document.getElementById('applications-list');
+            
+            if (applications.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <i class="fas fa-file-alt"></i>
+                        <p>No loan applications yet</p>
+                        <button class="btn btn-primary" onclick="window.location.href='apply-loan.html'">
+                            Apply for a Loan
+                        </button>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = applications.map(app => `
+                <div class="loan-card application">
+                    <div class="loan-header">
+                        <div>
+                            <h3>${formatCurrency(app.requested_amount)}</h3>
+                            <p>${app.loan_purpose}</p>
+                        </div>
+                        <span class="status-badge ${app.status}">${app.status}</span>
+                    </div>
+                    <div class="loan-info">
+                        <div class="info-item">
+                            <i class="fas fa-calendar"></i>
+                            <span>Applied: ${formatDate(app.application_date)}</span>
+                        </div>
+                        <div class="info-item">
+                            <i class="fas fa-clock"></i>
+                            <span>${app.requested_term_months} months</span>
+                        </div>
+                        <div class="info-item">
+                            <i class="fas fa-percentage"></i>
+                            <span>${app.requested_interest_rate}% APR</span>
+                        </div>
+                    </div>
+                    <div class="loan-actions">
+                        <button class="btn btn-secondary btn-sm" onclick="viewApplicationDetails(${app.id})">
+                            View Details
+                        </button>
+                        ${app.status === 'pending' ? `
+                            <button class="btn btn-danger btn-sm" onclick="withdrawApplication(${app.id})">
+                                Withdraw
+                            </button>
+                        ` : ''}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function displayActiveLoans() {
+            const container = document.getElementById('active-loans-list');
+            
+            if (activeLoans.length === 0) {
+                container.innerHTML = '<div class="empty-state">No active loans</div>';
+                return;
+            }
+
+            container.innerHTML = activeLoans.map(loan => {
+                const progress = (loan.total_repaid / loan.principal_amount) * 100;
+                return `
+                    <div class="loan-card active">
+                        <div class="loan-header">
+                            <div>
+                                <h3>${formatCurrency(loan.principal_amount)}</h3>
+                                <p>Loan ID: #${loan.id}</p>
+                            </div>
+                            <span class="status-badge active">Active</span>
+                        </div>
+                        <div class="loan-progress">
+                            <div class="progress-header">
+                                <span>Repayment Progress</span>
+                                <span>${progress.toFixed(1)}%</span>
+                            </div>
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width: ${progress}%"></div>
+                            </div>
+                            <div class="progress-stats">
+                                <span>Paid: ${formatCurrency(loan.total_repaid || 0)}</span>
+                                <span>Remaining: ${formatCurrency(loan.outstanding_balance)}</span>
+                            </div>
+                        </div>
+                        <div class="loan-info">
+                            <div class="info-item">
+                                <i class="fas fa-calendar"></i>
+                                <span>Start: ${formatDate(loan.start_date)}</span>
+                            </div>
+                            <div class="info-item">
+                                <i class="fas fa-calendar-check"></i>
+                                <span>End: ${formatDate(loan.maturity_date)}</span>
+                            </div>
+                            <div class="info-item">
+                                <i class="fas fa-percentage"></i>
+                                <span>${loan.interest_rate}% APR</span>
+                            </div>
+                        </div>
+                        <div class="loan-actions">
+                            <button class="btn btn-secondary btn-sm" onclick="viewLoanDetails(${loan.id})">
+                                View Details
+                            </button>
+                            <button class="btn btn-primary btn-sm" onclick="makePayment(${loan.id})">
+                                Make Payment
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function displayCompletedLoans() {
+            const container = document.getElementById('completed-loans-list');
+            
+            if (completedLoans.length === 0) {
+                container.innerHTML = '<div class="empty-state">No completed loans</div>';
+                return;
+            }
+
+            container.innerHTML = completedLoans.map(loan => `
+                <div class="loan-card completed">
+                    <div class="loan-header">
+                        <div>
+                            <h3>${formatCurrency(loan.principal_amount)}</h3>
+                            <p>Loan ID: #${loan.id}</p>
+                        </div>
+                        <span class="status-badge completed">${loan.status}</span>
+                    </div>
+                    <div class="loan-info">
+                        <div class="info-item">
+                            <i class="fas fa-calendar"></i>
+                            <span>${formatDate(loan.start_date)} - ${formatDate(loan.maturity_date)}</span>
+                        </div>
+                        <div class="info-item">
+                            <i class="fas fa-check-circle"></i>
+                            <span>Total Repaid: ${formatCurrency(loan.total_repaid)}</span>
+                        </div>
+                    </div>
+                    <div class="loan-actions">
+                        <button class="btn btn-secondary btn-sm" onclick="viewLoanDetails(${loan.id})">
+                            View Details
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function switchTab(tab) {
+            // Update buttons
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.closest('.tab-btn').classList.add('active');
+
+            // Update content
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            document.getElementById(`${tab}-tab`).classList.add('active');
+        }
+
+        async function viewApplicationDetails(appId) {
+            const app = applications.find(a => a.id === appId);
+            if (!app) return;
+
+            const content = `
+                <div class="details-grid">
+                    <div class="detail-item">
+                        <label>Application ID:</label>
+                        <span>#${app.id}</span>
+                    </div>
+                    <div class="detail-item">
+                        <label>Status:</label>
+                        <span class="status-badge ${app.status}">${app.status}</span>
+                    </div>
+                    <div class="detail-item">
+                        <label>Requested Amount:</label>
+                        <span>${formatCurrency(app.requested_amount)}</span>
+                    </div>
+                    <div class="detail-item">
+                        <label>Purpose:</label>
+                        <span>${app.loan_purpose}</span>
+                    </div>
+                    <div class="detail-item">
+                        <label>Term:</label>
+                        <span>${app.requested_term_months} months</span>
+                    </div>
+                    <div class="detail-item">
+                        <label>Interest Rate:</label>
+                        <span>${app.requested_interest_rate}%</span>
+                    </div>
+                    <div class="detail-item full-width">
+                        <label>Description:</label>
+                        <p>${app.description}</p>
+                    </div>
+                    <div class="detail-item full-width">
+                        <label>Application Date:</label>
+                        <span>${formatDateTime(app.application_date)}</span>
+                    </div>
+                </div>
+            `;
+
+            document.getElementById('loan-details-content').innerHTML = content;
+            document.getElementById('loan-details-modal').style.display = 'block';
+        }
+
+        async function viewLoanDetails(loanId) {
+            try {
+                const loan = await LoanAPI.getLoanDetails(loanId);
+                const schedule = await LoanAPI.getRepaymentSchedule(loanId);
+
+                const content = `
+                    <div class="details-grid">
+                        <div class="detail-item">
+                            <label>Loan ID:</label>
+                            <span>#${loan.id}</span>
+                        </div>
+                        <div class="detail-item">
+                            <label>Status:</label>
+                            <span class="status-badge ${loan.status}">${loan.status}</span>
+                        </div>
+                        <div class="detail-item">
+                            <label>Principal Amount:</label>
+                            <span>${formatCurrency(loan.principal_amount)}</span>
+                        </div>
+                        <div class="detail-item">
+                            <label>Interest Rate:</label>
+                            <span>${loan.interest_rate}%</span>
+                        </div>
+                        <div class="detail-item">
+                            <label>Start Date:</label>
+                            <span>${formatDate(loan.start_date)}</span>
+                        </div>
+                        <div class="detail-item">
+                            <label>Maturity Date:</label>
+                            <span>${formatDate(loan.maturity_date)}</span>
+                        </div>
+                        <div class="detail-item">
+                            <label>Outstanding Balance:</label>
+                            <span class="highlight">${formatCurrency(loan.outstanding_balance)}</span>
+                        </div>
+                        <div class="detail-item">
+                            <label>Total Repaid:</label>
+                            <span>${formatCurrency(loan.total_repaid || 0)}</span>
+                        </div>
+                    </div>
+                    <h3>Repayment Schedule</h3>
+                    <div class="schedule-table">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Payment #</th>
+                                    <th>Due Date</th>
+                                    <th>Amount</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${schedule.map((payment, idx) => `
+                                    <tr>
+                                        <td>${idx + 1}</td>
+                                        <td>${formatDate(payment.due_date)}</td>
+                                        <td>${formatCurrency(payment.payment_amount)}</td>
+                                        <td><span class="status-badge ${payment.payment_status}">${payment.payment_status}</span></td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+
+                document.getElementById('loan-details-content').innerHTML = content;
+                document.getElementById('loan-details-modal').style.display = 'block';
+            } catch (error) {
+                showToast('Failed to load loan details', 'error');
+            }
+        }
+
+        function closeLoanDetailsModal() {
+            document.getElementById('loan-details-modal').style.display = 'none';
+        }
+
+        function makePayment(loanId) {
+            currentLoan = activeLoans.find(l => l.id === loanId);
+            if (!currentLoan) return;
+
+            // Calculate next payment amount (simplified)
+            const monthlyPayment = calculateMonthlyPayment(
+                currentLoan.outstanding_balance,
+                currentLoan.interest_rate,
+                currentLoan.term_months
+            );
+
+            document.getElementById('payment-amount').value = monthlyPayment.toFixed(2);
+            document.getElementById('next-payment-amount').textContent = formatCurrency(monthlyPayment);
+            document.getElementById('payment-modal').style.display = 'block';
+        }
+
+        function closePaymentModal() {
+            document.getElementById('payment-modal').style.display = 'none';
+            currentLoan = null;
+        }
+
+        async function handlePayment(event) {
+            event.preventDefault();
+            
+            const amount = parseFloat(document.getElementById('payment-amount').value);
+            
+            try {
+                await LoanAPI.makePayment(currentLoan.id, amount);
+                showToast('Payment successful!', 'success');
+                closePaymentModal();
+                await loadAllLoans();
+            } catch (error) {
+                showToast('Payment failed: ' + error.message, 'error');
+            }
+        }
+
+        async function withdrawApplication(appId) {
+            if (!confirm('Are you sure you want to withdraw this application?')) return;
+
+            try {
+                await LoanAPI.withdrawApplication(appId);
+                showToast('Application withdrawn', 'success');
+                await loadAllLoans();
+            } catch (error) {
+                showToast('Failed to withdraw application', 'error');
+            }
+        }
+
+        // Close modals on outside click
+        window.onclick = function(event) {
+            const detailsModal = document.getElementById('loan-details-modal');
+            const paymentModal = document.getElementById('payment-modal');
+            if (event.target === detailsModal) {
+                closeLoanDetailsModal();
+            }
+            if (event.target === paymentModal) {
+                closePaymentModal();
+            }
+        }
+
+        window.addEventListener('DOMContentLoaded', initMyLoans);
+    </script>
+</body>
+</html>
