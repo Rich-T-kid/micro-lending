@@ -6,6 +6,7 @@
 * **Author:** Richard Baah, Jose Lamela, Saksham Mehta
 * **Date:** 2025-09-04
 * **Reviewers:** Development Team
+* **GitHub:** https://github.com/Rich-T-kid/micro-lending
 
 ---
 
