@@ -16,7 +16,7 @@ This document outlines the **technical design and implementation strategy** for 
 
 The system enables borrowers to request small loans and lenders to fund them, while enforcing credit evaluation, repayment tracking, and compliance reporting.
 
-**Linked Document:** [Microlending FRD](./Functional_Req.md)
+**Linked Document:** [Microlending FRD](Functional_Req.md)
 
 ---
 
