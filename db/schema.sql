@@ -266,6 +266,59 @@ INSERT INTO audit_log (user_id, action, table_name, record_id, new_values, ip_ad
 ON DUPLICATE KEY UPDATE user_id=user_id;
 
 -- =============================================================================
+-- USER ACCESS CONTROL - REQUIREMENT 2
+-- =============================================================================
+
+-- Create MySQL roles for different access levels
+CREATE ROLE IF NOT EXISTS 'db_admin'@'%';
+CREATE ROLE IF NOT EXISTS 'app_user'@'%';
+CREATE ROLE IF NOT EXISTS 'read_only_analyst'@'%';
+
+-- ADMIN ROLE: Full DDL and DML access
+GRANT ALL PRIVILEGES ON microlending.* TO 'db_admin'@'%';
+
+-- APP USER ROLE: DML only on specific tables (no DDL)
+GRANT SELECT, INSERT, UPDATE, DELETE ON microlending.user TO 'app_user'@'%';
+GRANT SELECT, INSERT, UPDATE, DELETE ON microlending.wallet_account TO 'app_user'@'%';
+GRANT SELECT, INSERT, UPDATE, DELETE ON microlending.loan_application TO 'app_user'@'%';
+GRANT SELECT, INSERT, UPDATE, DELETE ON microlending.loan TO 'app_user'@'%';
+GRANT SELECT, INSERT, UPDATE, DELETE ON microlending.transaction_ledger TO 'app_user'@'%';
+GRANT SELECT, INSERT, UPDATE, DELETE ON microlending.repayment_schedule TO 'app_user'@'%';
+GRANT SELECT, INSERT, UPDATE ON microlending.kyc_data TO 'app_user'@'%';
+GRANT SELECT, INSERT ON microlending.audit_log TO 'app_user'@'%';
+
+-- READ-ONLY ROLE: SELECT only
+GRANT SELECT ON microlending.user TO 'read_only_analyst'@'%';
+GRANT SELECT ON microlending.wallet_account TO 'read_only_analyst'@'%';
+GRANT SELECT ON microlending.loan_application TO 'read_only_analyst'@'%';
+GRANT SELECT ON microlending.loan TO 'read_only_analyst'@'%';
+GRANT SELECT ON microlending.transaction_ledger TO 'read_only_analyst'@'%';
+GRANT SELECT ON microlending.repayment_schedule TO 'read_only_analyst'@'%';
+GRANT SELECT ON microlending.audit_log TO 'read_only_analyst'@'%';
+
+-- Create test users assigned to roles
+CREATE USER IF NOT EXISTS 'admin_user'@'%' IDENTIFIED BY 'admin123';
+CREATE USER IF NOT EXISTS 'app_backend'@'%' IDENTIFIED BY 'app123';
+CREATE USER IF NOT EXISTS 'analyst_user'@'%' IDENTIFIED BY 'analyst123';
+
+-- Grant roles to users
+GRANT 'db_admin'@'%' TO 'admin_user'@'%';
+GRANT 'app_user'@'%' TO 'app_backend'@'%';
+GRANT 'read_only_analyst'@'%' TO 'analyst_user'@'%';
+
+-- Set default roles (active on login)
+SET DEFAULT ROLE 'db_admin'@'%' TO 'admin_user'@'%';
+SET DEFAULT ROLE 'app_user'@'%' TO 'app_backend'@'%';
+SET DEFAULT ROLE 'read_only_analyst'@'%' TO 'analyst_user'@'%';
+
+-- HOW TO TEST:
+-- 1. View grants: SHOW GRANTS FOR 'db_admin'@'%';
+-- 2. Connect as admin: mysql -h <host> -u admin_user -padmin123 microlending
+-- 3. Connect as app: mysql -h <host> -u app_backend -papp123 microlending
+-- 4. Connect as analyst: mysql -h <host> -u analyst_user -panalyst123 microlending
+-- 5. REVOKE demo: REVOKE INSERT ON microlending.audit_log FROM 'app_user'@'%';
+
+-- =============================================================================
 -- VERIFICATION
 -- =============================================================================
 

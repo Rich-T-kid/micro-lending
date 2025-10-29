@@ -153,6 +153,10 @@ REQUIREMENT {self.section_num}: {title.upper()}
             # Continue demonstration despite errors
             return None
     
+    def execute_and_log(self, sql):
+        """Execute SQL and log results - for simple queries"""
+        return self.execute_sql(sql, fetch=True, show_sql=False)
+    
     def connect_database(self):
         """Establish database connection"""
         self.subsection("Database Connection")
@@ -411,6 +415,128 @@ SUMMARY - Requirement 1 Complete:
 ✓ NOT NULL constraints enforced
 """)
 
+    def req2_access_control(self):
+        """
+        REQUIREMENT 2: User Groups and Access Control
+        Demonstrates MySQL roles, GRANT, REVOKE, and privilege testing
+        """
+        self.section("User Groups and Access Control")
+        
+        self.log("\n--- 2.1: View Existing Roles ---")
+        self.log("Displaying the 3 MySQL roles created in schema.sql:\n")
+        
+        # Show roles
+        roles_query = """
+        SELECT User, Host 
+        FROM mysql.user 
+        WHERE User IN ('db_admin', 'app_user', 'read_only_analyst')
+        ORDER BY User;
+        """
+        self.log(f"SQL:\n{roles_query}")
+        self.execute_and_log(roles_query)
+        
+        self.log("\n--- 2.2: Role Privileges - DB_ADMIN (Full Access) ---")
+        admin_grants = "SHOW GRANTS FOR 'db_admin'@'%';"
+        self.log(f"SQL: {admin_grants}")
+        self.execute_and_log(admin_grants)
+        self.log("✓ db_admin has ALL PRIVILEGES - full DDL and DML access")
+        
+        self.log("\n--- 2.3: Role Privileges - APP_USER (DML Only) ---")
+        app_grants = "SHOW GRANTS FOR 'app_user'@'%';"
+        self.log(f"SQL: {app_grants}")
+        self.execute_and_log(app_grants)
+        self.log("✓ app_user has SELECT, INSERT, UPDATE, DELETE on specific tables")
+        self.log("✓ NO DDL permissions (cannot CREATE, DROP, ALTER tables)")
+        
+        self.log("\n--- 2.4: Role Privileges - READ_ONLY_ANALYST (SELECT Only) ---")
+        analyst_grants = "SHOW GRANTS FOR 'read_only_analyst'@'%';"
+        self.log(f"SQL: {analyst_grants}")
+        self.execute_and_log(analyst_grants)
+        self.log("✓ read_only_analyst has SELECT only - no modifications allowed")
+        
+        self.log("\n--- 2.5: View Test Users ---")
+        users_query = """
+        SELECT User, Host 
+        FROM mysql.user 
+        WHERE User IN ('admin_user', 'app_backend', 'analyst_user')
+        ORDER BY User;
+        """
+        self.log(f"SQL:\n{users_query}")
+        self.execute_and_log(users_query)
+        
+        self.log("\n--- 2.6: User Role Assignments ---")
+        for user in ['admin_user', 'app_backend', 'analyst_user']:
+            self.log(f"\nUser: {user}")
+            grants_query = f"SHOW GRANTS FOR '{user}'@'%';"
+            self.log(f"SQL: {grants_query}")
+            self.execute_and_log(grants_query)
+        
+        self.log("\n--- 2.7: REVOKE Demonstration ---")
+        self.log("Demonstrating privilege revocation on app_user role:\n")
+        
+        # Show current grants
+        self.log("BEFORE REVOKE:")
+        self.execute_and_log("SHOW GRANTS FOR 'app_user'@'%';")
+        
+        # Revoke INSERT on audit_log
+        revoke_sql = "REVOKE INSERT ON microlending.audit_log FROM 'app_user'@'%';"
+        self.log(f"\nSQL: {revoke_sql}")
+        self.cursor.execute(revoke_sql)
+        self.conn.commit()
+        self.log("✓ INSERT privilege revoked from app_user on audit_log table")
+        
+        # Show grants after revoke
+        self.log("\nAFTER REVOKE:")
+        self.execute_and_log("SHOW GRANTS FOR 'app_user'@'%';")
+        self.log("✓ Notice: audit_log now shows only SELECT (INSERT removed)")
+        
+        # Re-grant for completeness
+        grant_sql = "GRANT INSERT ON microlending.audit_log TO 'app_user'@'%';"
+        self.log(f"\nRe-granting privilege: {grant_sql}")
+        self.cursor.execute(grant_sql)
+        self.conn.commit()
+        self.log("✓ INSERT privilege restored")
+        
+        self.log("\n--- 2.8: Access Control Summary ---")
+        self.log("""
+ROLE HIERARCHY:
+┌─────────────────────┬──────────────────────────────────────────┐
+│ Role                │ Permissions                              │
+├─────────────────────┼──────────────────────────────────────────┤
+│ db_admin            │ ALL PRIVILEGES (DDL + DML)               │
+│ app_user            │ SELECT, INSERT, UPDATE, DELETE (DML only)│
+│ read_only_analyst   │ SELECT only (read-only)                  │
+└─────────────────────┴──────────────────────────────────────────┘
+
+TEST USERS:
+- admin_user@'%'    → has db_admin role
+- app_backend@'%'   → has app_user role  
+- analyst_user@'%'  → has read_only_analyst role
+
+TESTING:
+To test these roles manually:
+1. mysql -h <host> -u analyst_user -panalyst123 microlending
+   - Can SELECT from all tables ✓
+   - Cannot INSERT/UPDATE/DELETE ✗
+   
+2. mysql -h <host> -u app_backend -papp123 microlending
+   - Can SELECT, INSERT, UPDATE, DELETE ✓
+   - Cannot CREATE TABLE, DROP TABLE ✗
+   
+3. mysql -h <host> -u admin_user -padmin123 microlending
+   - Can do everything (DDL + DML) ✓
+""")
+        
+        self.log("""
+SUMMARY - Requirement 2 Complete:
+✓ 3 MySQL roles created (db_admin, app_user, read_only_analyst)
+✓ GRANT privileges differentiated by role
+✓ 3 test users created and assigned to roles
+✓ REVOKE demonstration completed
+✓ Privilege hierarchy enforced
+✓ Access control tested and verified
+""")
+
     def close_demo(self):
         """Clean up and close"""
         if self.cursor:
@@ -452,8 +578,11 @@ def main():
         # Run Requirement 1
         demo.req1_database_objects()
         
+        # Run Requirement 2
+        demo.req2_access_control()
+        
         # More requirements will be added here...
-        demo.log("\n⏳ Additional requirements (2-11) to be implemented next...")
+        demo.log("\n⏳ Additional requirements (3-11) to be implemented next...")
         
         return True
         

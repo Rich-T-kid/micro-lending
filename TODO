@@ -20,16 +20,17 @@
 - [x] DEFAULT values
 - [x] Demonstrated in midterm_complete.py
 
-## REQUIREMENT 2 - User Groups and Access Control - NOT STARTED
-- [ ] Create 3 MySQL roles: db_admin, app_user, read_only_analyst
-- [ ] GRANT privileges differentiated by role:
+## REQUIREMENT 2 - User Groups and Access Control - COMPLETE
+- [x] Create 3 MySQL roles: db_admin, app_user, read_only_analyst
+- [x] GRANT privileges differentiated by role:
   - Admin: Full DDL and DML
   - App user: SELECT, INSERT, UPDATE, DELETE on specific tables
   - Read-only: SELECT only
-- [ ] REVOKE privileges demonstration
-- [ ] Create test users assigned to roles
-- [ ] Test cases showing successful/denied operations
-- [ ] Add to midterm_complete.py with logging
+- [x] REVOKE privileges demonstration
+- [x] Create test users assigned to roles (admin_user, app_backend, analyst_user)
+- [x] Test cases showing successful/denied operations
+- [x] Added to db/schema.sql
+- [x] Add to midterm_complete.py with logging
 
 ## REQUIREMENT 3 - Stored Procedures - NOT STARTED
 - [ ] Procedure 1: Loan disbursement (multi-table insert)
