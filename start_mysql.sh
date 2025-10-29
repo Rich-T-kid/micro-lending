@@ -22,5 +22,8 @@ echo "Database: $MYSQL_DATABASE"
 echo "User: $MYSQL_USER"
 echo ""
 
+# Add MySQL client to PATH if not already there
+export PATH="/opt/homebrew/opt/mysql-client/bin:$PATH"
+
 # Connect to MySQL
 mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE"

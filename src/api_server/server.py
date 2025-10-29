@@ -1468,11 +1468,7 @@ async def create_rating(
         
         return models.CreateRatingResponse(
             rating_id=new_rating.review_id,
-            reviewee_id=reviewee_id,  # Return the generated ID
-            rating=new_rating.rating,
-            comment=new_rating.comment,
-            date_created=new_rating.created_at,
-            successful=True
+            reviewee_id=reviewee_id  # Return the generated ID
         )
     except HTTPException:
         raise
