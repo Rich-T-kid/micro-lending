@@ -51,6 +51,30 @@ mysql -h micro-lending.cmvo24soe2b0.us-east-1.rds.amazonaws.com \
 # Login: john.doe@email.com / password123
 ```
 
+### Database Access
+
+**MySQL Shell (Mac/Linux):**
+```bash
+./start_mysql.sh
+```
+
+**Direct Connection:**
+```bash
+mysql -h micro-lending.cmvo24soe2b0.us-east-1.rds.amazonaws.com \
+      -u admin -pmicropass microlending
+```
+
+**Windows Users:**
+- Install MySQL Workbench: https://dev.mysql.com/downloads/workbench/
+- Connection details from `.env` file (host, user, password, database)
+
+**Mac Setup:**
+```bash
+brew install mysql-client
+echo 'export PATH="/opt/homebrew/opt/mysql-client/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+```
+
 ## Project Structure
 
 ```
@@ -151,29 +175,52 @@ python3 midterm_complete.py
 
 ## API Endpoints
 
-### Auth
-- \`POST /auth/login\` - User login
-- \`POST /auth/register\` - Create account
+Full documentation at http://localhost:8000/docs when backend is running.
+
+### Authentication
+- `POST /auth/login` - Login with email/password
+- `POST /auth/refresh` - Refresh JWT token
 
 ### Users
-- \`GET /users/me\` - Current user
-- \`PUT /users/{id}\` - Update user
+- `POST /users` - Register new user
+- `GET /users` - List all users
+- `GET /users/{user_id}` - Get user details
+- `PUT /users/{user_id}` - Update user
+- `DELETE /users/{user_id}` - Delete user
 
-### Wallets
-- \`GET /users/{id}/accounts\` - Get wallet
-- \`POST /wallets/deposit\` - Add funds
-- \`POST /wallets/withdraw\` - Remove funds
+### KYC & Wallets
+- `POST /users/{user_id}/kyc` - Submit KYC data
+- `GET /users/{user_id}/kyc` - Get KYC status
+- `GET /users/{user_id}/accounts` - Get wallet accounts
+- `POST /users/{user_id}/accounts` - Create wallet
+- `GET /accounts/{account_id}/transactions` - Transaction history
 
-### Loans
-- \`GET /loans/my-loans\` - User's loans
-- \`POST /loans/apply\` - Apply for loan
-- \`POST /loans/{id}/repay\` - Make payment
+### Loan Applications
+- `GET /users/{user_id}/loan-application` - List applications
+- `POST /users/{user_id}/loan-application` - Apply for loan
+- `GET /users/{user_id}/loan-applications/{application_id}` - Get application
+- `PUT /users/{user_id}/loan-applications/{application_id}` - Update application
+
+### Loans & Payments
+- `GET /users/{user_id}/loans` - User's loans
+- `GET /users/{user_id}/loans/{loan_id}` - Loan details
+- `GET /users/{user_id}/loans/{loan_id}/payments` - Payment schedule
+- `POST /users/{user_id}/loans/{loan_id}/payments` - Make payment
 
 ### Admin
-- \`GET /admin/users\` - User management
-- \`GET /admin/audit-logs\` - Audit trail
+- `GET /admin/dashboard` - Platform metrics
+- `GET /admin/loans/approval` - Pending approvals
+- `POST /admin/loans/{loan_id}/approve` - Approve loan
+- `POST /admin/loans/{loan_id}/reject` - Reject loan
+- `GET /admin/audit-logs` - Audit trail
+- `GET /admin/transactions` - All transactions
 
-### Demo
+### Demo (Midterm)
+- `POST /demo/transaction/success` - Successful transaction demo
+- `POST /demo/transaction/failure` - Failed transaction (rollback)
+- `GET /demo/query/explain` - EXPLAIN query analysis
+- `GET /demo/audit/trail` - Audit log demo
+- `POST /demo/constraint/violation` - Constraint violation demo
 - \`POST /demo/transaction/success\` - Atomic transaction
 - \`POST /demo/transaction/failure\` - Rollback demo
 - \`GET /demo/query/explain\` - Query optimization
