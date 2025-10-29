@@ -1,23 +1,5 @@
 #!/usr/bin/env python3
-"""
-================================================================================
-🎓 DATABASE ADMINISTRATION - MIDTERM PROJECT COMPREHENSIVE DEMONSTRATION
-================================================================================
 
-MICRO-LENDING PLATFORM - Complete Database Implementation
-
-This script provides a complete, systematic demonstration of ALL 11 required
-database administration concepts for the midterm project.
-
-Author: [Your Name]
-Course: Database Administration
-Date: October 29, 2025
-Database: Micro-Lending Platform (MySQL 8.0)
-
-ALL DEMONSTRATIONS ARE LOGGED TO: MIDTERM_SUBMISSION.log
-
-================================================================================
-"""
 
 import pymysql
 import hashlib
@@ -61,10 +43,6 @@ class MidtermDemonstration:
 DATABASE ADMINISTRATION - MIDTERM PROJECT DEMONSTRATION
 {'='*80}
 
-Student Name: [Your Name]
-Student ID: [Your ID]
-Course: Database Administration
-Instructor: [Instructor Name]
 Date: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}
 
 Project: Micro-Lending Platform Database Implementation
