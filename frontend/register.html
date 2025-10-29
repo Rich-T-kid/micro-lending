@@ -113,10 +113,11 @@
     <script src="js/api.js"></script>
     <script src="js/utils.js"></script>
     <script>
+        // TEMPORARILY DISABLED FOR DEMO - Skip redirect check
         // Check if already logged in
-        if (isAuthenticated()) {
-            window.location.href = 'dashboard.html';
-        }
+        // if (isAuthenticated()) {
+        //     window.location.href = 'dashboard.html';
+        // }
 
         // Handle registration form submission
         document.getElementById('register-form').addEventListener('submit', async (e) => {

@@ -163,9 +163,8 @@ class Loan(Base):
     borrower_id = Column(BIGINT, ForeignKey('user_account.user_id'), nullable=False)
     lender_type = Column(Enum('USER', 'INSTITUTION'), nullable=False)
     lender_id = Column(BIGINT, nullable=False)
-    principal_amount = Column(DECIMAL(18, 2), nullable=False)
+    # REFACTORED 3NF: principal_amount and interest_rate_apr now retrieved from loan_offer via JOIN
     currency_code = Column(CHAR(3), ForeignKey('currency.currency_code'), nullable=False)
-    interest_rate_apr = Column(DECIMAL(6, 3), nullable=False)
     origination_fee = Column(DECIMAL(18, 2), default=0)
     start_date = Column(Date, nullable=False)
     maturity_date = Column(Date, nullable=False)
@@ -240,6 +239,18 @@ class DelinquencyReport(Base):
     days_past_due = Column(Integer, nullable=False)
     snapshot_date = Column(Date, nullable=False)
     status = Column(Enum('CURRENT', 'DPD_30', 'DPD_60', 'DPD_90', 'DEFAULT'), nullable=False)
+
+class LenderAccount(Base):
+    __tablename__ = "lender_account"
+    
+    lender_account_id = Column(BIGINT, primary_key=True, autoincrement=True)
+    lender_type = Column(Enum('USER', 'INSTITUTION'), nullable=False)
+    lender_id = Column(BIGINT, nullable=False)
+    account_id = Column(BIGINT, ForeignKey('wallet_account.account_id'), nullable=False, unique=True)
+    portfolio_status = Column(Enum('active', 'suspended', 'closed'), default='active')
+    total_funded = Column(DECIMAL(18, 2), default=0)
+    total_returned = Column(DECIMAL(18, 2), default=0)
+    created_at = Column(TIMESTAMP, default=datetime.utcnow)
 
 class MessageThread(Base):
     __tablename__ = "message_thread"

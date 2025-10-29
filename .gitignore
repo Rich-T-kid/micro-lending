@@ -1,2 +1,47 @@
+# Python
 .venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Environment
 .env
+.env.local
+
+# Logs
+*.log
+MIDTERM_*.log
+*.log.*
+
+# Database
+*.sql.backup
+*.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Node.js (frontend)
+node_modules/
+package-lock.json
+npm-debug.log*
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# OS
+Thumbs.db
+.DS_Store

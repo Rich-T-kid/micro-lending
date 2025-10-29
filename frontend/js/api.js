@@ -255,15 +255,13 @@ const ReportAPI = {
 
 // Helper function to check if user is authenticated
 function isAuthenticated() {
-    return !!getAuthToken();
+    // TEMPORARILY DISABLED FOR DEMO - Return true to allow access without login
+    return true;
 }
 
 // Helper function to protect pages (redirect to login if not authenticated)
 function requireAuth() {
-    if (!isAuthenticated()) {
-        window.location.href = '/login.html';
-        return false;
-    }
+    // TEMPORARILY DISABLED FOR DEMO - Allow access without auth check
     return true;
 }
 

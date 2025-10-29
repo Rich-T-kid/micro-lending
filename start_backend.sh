@@ -5,6 +5,6 @@
 cd "$(dirname "$0")"
 source venv/bin/activate
 cd src/api_server
-echo "🚀 Starting Backend Server..."
+echo " starting Backend Server..."
 echo "================================"
 python server.py

@@ -58,11 +58,11 @@ class Navigation {
     }
 
     static async init(activePage = '') {
-        // Check authentication
-        if (!isAuthenticated()) {
-            window.location.href = '/login.html';
-            return;
-        }
+        // TEMPORARILY DISABLED FOR DEMO - Skip authentication check
+        // if (!isAuthenticated()) {
+        //     window.location.href = '/login.html';
+        //     return;
+        // }
 
         // Insert navigation
         const navPlaceholder = document.getElementById('nav-placeholder');
@@ -73,10 +73,18 @@ class Navigation {
         // Load user info
         try {
             const user = await UserAPI.getProfile();
-            document.getElementById('nav-user-name').textContent = `${user.first_name} ${user.last_name}`;
-            document.getElementById('nav-user-email').textContent = user.email;
+            if (document.getElementById('nav-user-name')) {
+                document.getElementById('nav-user-name').textContent = `${user.first_name} ${user.last_name}`;
+            }
+            if (document.getElementById('nav-user-email')) {
+                document.getElementById('nav-user-email').textContent = user.email;
+            }
         } catch (error) {
             console.error('Failed to load user info:', error);
+            // Use demo user name for demo purposes
+            if (document.getElementById('nav-user-name')) {
+                document.getElementById('nav-user-name').textContent = 'Demo User';
+            }
         }
     }
 

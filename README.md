@@ -1,120 +1,233 @@
 # Micro-Lending Platform
 
-A comprehensive micro-lending platform supporting borrowers, lenders, and administrative operations. Includes a MySQL database schema, FastAPI backend, and admin/reporting endpoints.
+Database Administration Course - Midterm Project
 
----
+A full-stack micro-lending platform demonstrating core database administration concepts. Borrowers apply for loans, lenders fund applications, and admins manage the platform.
 
-## Project Overview
+## Architecture
 
-This project provides:
-- **Database schema** for users, loans, repayments, transactions, ratings, and admin features
-- **FastAPI backend** for authentication, user management, KYC, wallet, loan applications, risk assessment, offers, payments, portfolio, auto-lending, ratings, admin, and reporting
-- **Admin dashboard** and compliance endpoints
+```
+Frontend (Express:3000) → Backend (FastAPI:8000) → Database (MySQL 8.0 RDS)
+```
 
----
+- **Frontend**: HTML/CSS/JS with Express.js, JWT auth in localStorage
+- **Backend**: FastAPI REST API with SQLAlchemy ORM, SHA256 password hashing  
+- **Database**: MySQL 8.0 on AWS RDS - 8 core tables with constraints/indexes
 
-## Setup & Installation
+## Quick Start
 
 ### Prerequisites
-- Python 3.11+
-- MySQL 8+ (Amazon RDS recommended)
-- Docker (optional, for local MySQL)
+- Python 3.9+
+- Node.js 16+
+- MySQL 8.0+ access
 
-### Clone the Repository
-```bash
-git clone https://github.com/Rich-T-kid/micro-lending.git
-cd micro-lending
-```
+### Setup
 
-### Install Python Dependencies
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
+# 1. Install dependencies
 pip install -r requirements.txt
-```
+cd frontend && npm install && cd ..
 
-### Database Setup
-1. Create a MySQL database (see below for charset/collation)
-2. Apply migrations:
-```bash
-mysql --ssl-mode=REQUIRED -h <endpoint> -P 3306 -u <user> -p microlending < db/migrations/0001_init.sql
-mysql --ssl-mode=REQUIRED -h <endpoint> -P 3306 -u <user> -p microlending < db/migrations/0002_seed_minimum.sql
-mysql --ssl-mode=REQUIRED -h <endpoint> -P 3306 -u <user> -p microlending < db/migrations/0003_indexes.sql
-```
-Or use the helper script:
-```bash
-sh db/scripts/migrate.sh
-```
-
-### Environment Variables
-Create a `.env` file with your database credentials:
-```dotenv
-MYSQL_HOST=your-db-endpoint.rds.amazonaws.com
-MYSQL_PORT=3306
+# 2. Create .env file
+cat > .env << EOF
+MYSQL_USER=admin
+MYSQL_PASSWORD=micropass
+MYSQL_HOST=micro-lending.cmvo24soe2b0.us-east-1.rds.amazonaws.com
 MYSQL_DATABASE=microlending
-MYSQL_USER=app_user
-MYSQL_PASSWORD=replace-me
+JWT_SECRET=your_secret_key_here
+EOF
+
+# 3. Initialize database
+mysql -h micro-lending.cmvo24soe2b0.us-east-1.rds.amazonaws.com \
+      -u admin -pmicropass microlending < db/schema.sql
+
+# 4. Start servers (two terminals)
+./start_backend.sh   # Terminal 1
+./start_frontend.sh  # Terminal 2
+
+# 5. Access
+# Frontend: http://localhost:3000
+# API Docs: http://localhost:8000/docs
+# Login: john.doe@email.com / password123
 ```
 
----
-
-## How to Run the API Server
-
-1. Activate your Python environment:
-```bash
-source .venv/bin/activate
-```
-2. Start the FastAPI server:
-```bash
-python src/api_server/server.py
-```
-Or with Uvicorn:
-```bash
-uvicorn src/api_server/server:app --reload
-```
-3. Visit [http://localhost:8000/docs](http://localhost:8000/docs) for interactive Swagger UI.
-
----
-
-## Current Implementation Status
-
-- **Database:**
-  - Schema, migrations, and seed data complete
-  - Indexes and views for performance
-- **API Server:**
-  - All major endpoints implemented (auth, users, KYC, wallet, loans, offers, payments, ratings, admin, reporting)
-  - JWT authentication and error handling
-  - Admin dashboard, compliance, and reporting endpoints
-  - Ratings & review system simplified and functional
-- **Testing:**
-  - Pytest configuration included
-  - Unit and integration tests in `src/api_server/server_test.py`
-- **Docs:**
-  - Swagger/OpenAPI spec in `src/api_server/spec.yml`
-  - Architectural and technical docs in repo root
-
----
-
-## Repo Layout
+## Project Structure
 
 ```
+microlending_project/
 ├── db/
-│   ├── migrations/
-│   └── scripts/
+│   ├── schema.sql              # Complete schema + demo data
+│   └── reset.sql               # Drop tables
 ├── src/api_server/
-│   ├── models.py
-│   ├── server.py
-│   ├── server_test.py
-│   └── spec.yml
-├── requirements.txt
-├── README.md
-└── ...
+│   ├── server.py              # FastAPI app with all endpoints
+│   ├── models.py              # SQLAlchemy ORM
+│   └── server_test.py         # Tests
+├── frontend/
+│   ├── *.html                 # Pages
+│   ├── js/api.js              # API client with JWT
+│   └── server.js              # Express server
+├── midterm_complete.py         # Midterm demo script
+├── MIDTERM_SUBMISSION.log      # Demo output
+└── requirements.txt            # Python deps
 ```
 
----
+## Database Schema
 
-## Notes
-- Default DB charset/collation: `utf8mb4` + `utf8mb4_0900_ai_ci`
-- Use SSL for all database connections
-- Allow-list only trusted IPs for RDS
-- For questions, see `Technical_Design_Doc.md` or contact repo owner
+### 8 Core Tables
+
+1. `user` - User accounts (borrowers, lenders, admins)
+2. `wallet_account` - Financial balances
+3. `kyc_data` - Identity verification
+4. `loan_application` - Loan requests from borrowers
+5. `loan` - Active and completed loans
+6. `transaction_ledger` - All financial transactions
+7. `repayment_schedule` - Payment tracking
+8. `audit_log` - Activity audit trail
+
+### Key Features
+- PRIMARY KEY with AUTO_INCREMENT on all tables
+- FOREIGN KEY relationships with CASCADE/RESTRICT/SET NULL
+- CHECK constraints (credit scores 300-850, positive amounts)
+- UNIQUE constraints on emails, account numbers
+- 25+ indexes for query performance
+
+## Authentication
+
+**Password Hashing**: SHA256 via \`hashlib.sha256\` (backend requirement, not bcrypt)
+
+**Demo Users** (password: \`password123\` for all):
+
+| Email | Role | Credit Score |
+|-------|------|--------------|
+| john.doe@email.com | Borrower | 720 |
+| jane.smith@email.com | Borrower | 680 |
+| bob.johnson@email.com | Lender | 780 |
+| alice.williams@email.com | Lender | 800 |
+| admin@microlending.com | Admin | 850 |
+
+**JWT Flow**:
+1. POST \`/auth/login\` → receive JWT token
+2. Store in localStorage
+3. Include in requests: \`Authorization: Bearer <token>\`
+
+## Database Management
+
+### Reset Database
+\`\`\`bash
+# Drops all data
+mysql -h <host> -u admin -p microlending < db/reset.sql
+mysql -h <host> -u admin -p microlending < db/schema.sql
+\`\`\`
+
+### Verify Tables
+\`\`\`bash
+mysql -h <host> -u admin -p microlending -e "SHOW TABLES;"
+mysql -h <host> -u admin -p microlending -e "DESCRIBE user;"
+\`\`\`
+
+## Midterm Demonstration
+
+**File**: \`midterm_complete.py\`
+
+Demonstrates 11 database admin requirements:
+
+1. ✅ Database Objects (tables, constraints, indexes) - COMPLETE
+2. ⏳ Data Manipulation (INSERT, UPDATE, DELETE)
+3. ⏳ Advanced Queries (JOINs, subqueries, aggregations)
+4. ⏳ Stored Procedures
+5. ⏳ Functions
+6. ⏳ Triggers
+7. ⏳ Views
+8. ⏳ Transactions & ACID
+9. ⏳ User Management & Privileges
+10. ⏳ Backup & Recovery
+11. ⏳ Performance Optimization
+
+**Usage**:
+\`\`\`bash
+python3 midterm_complete.py
+# Output: MIDTERM_SUBMISSION.log
+\`\`\`
+
+## API Endpoints
+
+### Auth
+- \`POST /auth/login\` - User login
+- \`POST /auth/register\` - Create account
+
+### Users
+- \`GET /users/me\` - Current user
+- \`PUT /users/{id}\` - Update user
+
+### Wallets
+- \`GET /users/{id}/accounts\` - Get wallet
+- \`POST /wallets/deposit\` - Add funds
+- \`POST /wallets/withdraw\` - Remove funds
+
+### Loans
+- \`GET /loans/my-loans\` - User's loans
+- \`POST /loans/apply\` - Apply for loan
+- \`POST /loans/{id}/repay\` - Make payment
+
+### Admin
+- \`GET /admin/users\` - User management
+- \`GET /admin/audit-logs\` - Audit trail
+
+### Demo
+- \`POST /demo/transaction/success\` - Atomic transaction
+- \`POST /demo/transaction/failure\` - Rollback demo
+- \`GET /demo/query/explain\` - Query optimization
+- \`GET /demo/audit/trail\` - Audit logging
+
+## Testing
+
+\`\`\`bash
+# Run backend tests
+pytest src/api_server/server_test.py
+
+# Quick API test
+curl http://localhost:8000/health
+\`\`\`
+
+## Troubleshooting
+
+**"ModuleNotFoundError"**
+\`\`\`bash
+pip install -r requirements.txt
+\`\`\`
+
+**"Can't connect to MySQL"**
+- Check network connection
+- Verify \`.env\` credentials
+- Test: \`mysql -h <host> -u admin -p\`
+
+**"Address already in use"**
+\`\`\`bash
+lsof -ti:8000 | xargs kill -9  # Backend
+lsof -ti:3000 | xargs kill -9  # Frontend
+\`\`\`
+
+## Important Notes
+
+- **Password Hashing**: SHA256 only (backend requires this, not bcrypt)
+- **MySQL Version**: Requires 8.0+ for CHECK constraints
+- **Ports**: Backend 8000, Frontend 3000
+- **Schema**: \`db/schema.sql\` is the source of truth
+- **Foreign Keys**: Mix of CASCADE and RESTRICT - check schema carefully
+
+## Debugging
+
+\`\`\`bash
+# Check running servers
+lsof -i :8000  # Backend
+lsof -i :3000  # Frontend
+
+# View logs
+tail -f MIDTERM_SUBMISSION.log
+
+# Connect to database
+mysql -h micro-lending.cmvo24soe2b0.us-east-1.rds.amazonaws.com \
+      -u admin -pmicropass microlending
+\`\`\`
+
+

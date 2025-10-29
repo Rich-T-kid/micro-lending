@@ -1,3 +1,139 @@
-- README specifications 
-    --> pre reqs
-    --> installation 
+# MIDTERM PROJECT TODO - Database Administration
+
+## COMPLETED ✅
+1. Database Objects Creation
+   - [x] Tables with appropriate data types (8 core tables)
+   - [x] Primary keys with AUTO_INCREMENT
+   - [x] Foreign keys with CASCADE/RESTRICT/SET NULL
+   - [x] 25+ indexes on frequently queried columns
+   - [x] CHECK constraints for data validation
+   - [x] UNIQUE constraints on emails, account numbers
+   - [x] Schema in db/schema.sql with comments
+   - [x] Demonstration script framework in midterm_complete.py
+
+## IN PROGRESS 🔄
+- [x] Remove hardcoded values from codebase
+  - Check .env usage throughout
+  - Verify no credentials in code
+  - Config-driven approach
+
+## PENDING ⏳
+
+### 2. User Groups and Access Control
+- [ ] Create 3 roles: db_admin, app_user, read_only_analyst
+- [ ] GRANT privileges differentiated by role
+- [ ] REVOKE privileges demonstration
+- [ ] Create test users assigned to roles
+- [ ] Test cases showing successful/denied operations
+- [ ] Add to midterm_complete.py with logging
+
+### 3. Stored Procedures
+- [ ] Procedure 1: Multi-table insert (loan disbursement)
+  - Create loan + transaction + wallet update
+  - Error handling
+  - Input/output parameters
+- [ ] Procedure 2: Repayment processing
+  - Update loan balance, create transaction, update schedule
+- [ ] Procedure 3: Risk assessment calculation
+  - Complex business logic
+  - Return calculated risk score
+- [ ] Add CALL examples to midterm_complete.py
+
+### 4. Views
+- [ ] Simple view: Active loans (filter by status)
+- [ ] Complex view: Portfolio dashboard (joins + aggregations)
+- [ ] Security view: User profile without sensitive data
+- [ ] Document use cases for each
+- [ ] Add to midterm_complete.py
+
+### 5. Query Performance with EXPLAIN
+- [ ] Query 1: Loan by borrower (with/without index)
+- [ ] Query 2: Payments due (with/without index on due_date)
+- [ ] Query 3: Transaction history (with/without index)
+- [ ] Capture EXPLAIN output before/after
+- [ ] Document execution plans
+- [ ] Add to midterm_complete.py
+
+### 6. Data Initialization Strategy
+- [x] Sample data in schema.sql (6 users, wallets, loans)
+- [ ] Document data generation approach
+- [ ] Explain foreign key satisfaction
+- [ ] Add bulk loading demonstration if needed
+
+### 7. Audit Strategy
+- [x] Audit log table created
+- [ ] Triggers on 2-3 critical tables:
+  - loan table (track status changes)
+  - wallet_account table (track balance changes)
+  - user table (track profile changes)
+- [ ] Audit queries:
+  - Who modified record X?
+  - Show all changes in last 7 days
+  - Value before/after comparison
+- [ ] Add to midterm_complete.py
+
+### 8. Cascading Deletes
+- [x] CASCADE examples in schema (loan → repayment_schedule)
+- [x] RESTRICT examples in schema (user → loan)
+- [ ] Test DELETE operations showing cascade
+- [ ] Before/after SELECT queries
+- [ ] Add to midterm_complete.py
+
+### 9. Transaction Management and Rollback
+- [x] Demo endpoints show transactions (success/failure)
+- [ ] Formal demonstration in midterm_complete.py:
+  - Successful multi-statement transaction
+  - Failed transaction with rollback
+  - Show database state before/during/after
+  - Constraint violation rollback
+- [ ] Transaction isolation levels (optional)
+
+### 10. Constraints and Triggers
+- [x] CHECK constraints (credit score 300-850, positive amounts)
+- [x] UNIQUE constraints (emails, account numbers)
+- [x] NOT NULL constraints on required fields
+- [x] DEFAULT values (timestamps, status)
+- [ ] BEFORE trigger: Auto-calculate or validate before insert
+- [ ] AFTER trigger: Audit logging after update
+- [ ] Test trigger behavior
+- [ ] Add to midterm_complete.py
+
+### 11. Additional Elements
+- [x] Data types demonstrated (INT, VARCHAR, DATE, DECIMAL, ENUM-like)
+- [x] Normalization (3NF documented in README)
+- [ ] Backup and recovery strategy:
+  - mysqldump command examples
+  - Restore procedure
+  - Document in README
+
+## DELIVERABLES 📦
+
+### Code Files
+- [x] db/schema.sql - Complete DDL with comments
+- [ ] midterm_complete.py - All 11 requirements demonstrated
+- [ ] MIDTERM_SUBMISSION.log - Complete output log
+
+### Documentation
+- [ ] Video demonstration (10-15 min Zoom recording)
+  - Walk through each requirement
+  - Show code execution
+  - Explain design decisions
+- [ ] PDF demonstration document:
+  - Screenshots of execution
+  - EXPLAIN outputs
+  - Before/after states
+  - Explanatory text
+
+### Testing
+- [ ] Test scripts for each requirement
+- [ ] Verify all demos run successfully
+- [ ] Check no hardcoded credentials
+
+## PRIORITY ORDER 🎯
+1. Complete midterm_complete.py requirements 2-11
+2. Remove any hardcoded values
+3. Create triggers and stored procedures
+4. Run full demonstration and capture log
+5. Create PDF with screenshots
+6. Record video walkthrough
+7. Final testing and submission 

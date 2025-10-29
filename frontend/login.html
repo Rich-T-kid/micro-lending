@@ -61,10 +61,11 @@
     <script src="js/api.js"></script>
     <script src="js/utils.js"></script>
     <script>
+        // TEMPORARILY DISABLED FOR DEMO - Skip redirect check
         // Check if already logged in
-        if (isAuthenticated()) {
-            window.location.href = '/dashboard.html';
-        }
+        // if (isAuthenticated()) {
+        //     window.location.href = '/dashboard.html';
+        // }
 
         // Handle login form submission
         document.getElementById('login-form').addEventListener('submit', async (e) => {
@@ -132,8 +133,8 @@
         document.querySelector('.auth-footer').after(demoLoginDiv);
 
         function fillDemoCredentials() {
-            document.getElementById('email').value = 'demo@microlending.com';
-            document.getElementById('password').value = 'demo123';
+            document.getElementById('email').value = 'john.doe@email.com';
+            document.getElementById('password').value = 'password123';
             showToast('Demo credentials filled! Click Sign In to continue.', 'info');
         }
     </script>
