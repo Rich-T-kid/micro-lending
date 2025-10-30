@@ -11,133 +11,149 @@
 > See the companion **[Functional Requirements Document](Functional_Req.md)** for user-facing behavior and use cases.
 ---
 
-## 1) System Architecture (High-Level Overview)
+## 1 System Architecture (High-Level Overview)
 **Three-tier architecture** separating concerns:
-- **Presentation Layer:** Web UI (HTML/CSS/JS).
-- **Business Logic Layer:** FastAPI (Python 3) service exposing REST endpoints for authentication, KYC, loan applications, loans, repayments, wallets, and reports.
-- **Data Layer:** **MySQL 8 (InnoDB)** hosted on Railway. The application connects using a restricted DB role (`app_user`) to enforce least privilege.
+- **Presentation Layer:** Web UI built with HTML, CSS, and JavaScript
+- **Business Logic Layer:** FastAPI service exposing REST endpoints for authentication, KYC, loan applications, loans, repayments, wallets, and reports
+- **Data Layer:** MySQL 8.0.42 hosted on AWS RDS at micro-lending.cmvo24soe2b0.us-east-1.rds.amazonaws.com with appropriate database privileges
 
 Deployment highlights:
-- Stateless API containers (scales horizontally).
-- Single MySQL instance for course scope (with indexes and backups).
-- Read-only analytics can connect using `read_only_analyst` credentials.
+- Stateless API containers that scale horizontally
+- AWS RDS MySQL instance with automated backups and monitoring
+- Read-only analytics using the `read_only_analyst` database role
 
 ---
 
-## 2) Technology Stack
-- **Frontend:** HTML, CSS, JavaScript (SPA or MPA acceptable).
-- **Backend:** Python 3 + **FastAPI**; Pydantic for request/response validation; SQLAlchemy or mysqlclient/aiomysql for DB access.
-- **Database:** **MySQL 8 (InnoDB)** — schema applied via `schema.sql` (provided).
-- **Authentication:** JWT-based sessions; passwords hashed with **bcrypt** or **argon2** in the application layer.
-- **External Services (optional stubs):** Payment rails and KYC provider integrations are simulated; metadata persists in `kyc_data` when needed.
-- **Config & Secrets:** Environment variables; app uses the restricted `app_user` DB account.
+## 2 Technology Stack
+- **Frontend:** HTML, CSS, JavaScript
+- **Backend:** Python 3 with FastAPI and Pydantic for request/response validation; SQLAlchemy 2.0 with PyMySQL for database access
+- **Database:** MySQL 8.0.42 on AWS RDS with schema defined in `schema.sql`
+- **Authentication:** JWT-based sessions using PyJWT library; passwords hashed with SHA256
+- **External Services:** Payment gateway and KYC provider integrations are simulated with metadata stored in `kyc_data` table
+- **Configuration:** Environment variables managed through python-dotenv with credentials in `.env` file
 
 ---
 
-## 3) Data Model (ER Diagram)
-**[Data Model / ER Diagram](final_er_diagram.pdf)**
+## 3 Data Model (ER Diagram)
+The complete entity-relationship diagram is available in the project documentation showing all 8 tables with their relationships and constraints.
 
 ---
 
-## 4) Database Design Decisions
-- **Normalization:** Target **3NF**. Derived fields (`monthly_payment`, `outstanding_balance`) are persisted for performance; service layer validates and keeps them consistent.
-- **Keys & Types:** INT AUTO_INCREMENT PKs; **DECIMAL(15,2)** for money; **DATETIME/DATE** for time; **BOOLEAN** flags; strings via **VARCHAR/TEXT**. Audit payloads are JSON-encoded **TEXT** (portable and easy to log).
-- **Referential Integrity:** Enforced with FKs and sensible ON DELETE actions (CASCADE/SET NULL/RESTRICT) as shown in the diagram.
-- **Constraints (CHECKs):** Present for role/status enums, credit score range, non-negative balances/amounts, and interest-rate bounds (0–100).
+## 4 Database Design Decisions
+- **Normalization:** Database is designed to 3NF. Derived fields like `monthly_payment` and `outstanding_balance` are persisted for performance with the service layer maintaining consistency
+- **Keys & Types:** INT AUTO_INCREMENT primary keys; DECIMAL(15,2) for monetary values; DATETIME and DATE for temporal data; BOOLEAN for flags; VARCHAR and TEXT for strings. Audit payloads are JSON-encoded as TEXT for portability
+- **Referential Integrity:** Enforced with foreign keys using ON DELETE actions CASCADE, SET NULL, or RESTRICT as appropriate for each relationship
+- **Constraints:** CHECK constraints enforce role/status enums, credit score ranges (300-850), non-negative balances and amounts, and interest rate bounds (0-100)
 - **Indexing Strategy:** 
-  - **Provided:** `user(email, role, created_at)`, `wallet_account(user_id, status)`, `kyc_data(user_id, verification_status)`, `loan_application(applicant_id, status, created_at)`, `loan(borrower_id, lender_id, status, maturity_date)`, `transaction_ledger(wallet_id, loan_id, transaction_type, created_at)`, `repayment_schedule(loan_id, due_date, status)`, `audit_log(user_id, (table_name,record_id), created_at)`.
-  - **Optional additions (non-breaking):**
-    - `CREATE INDEX idx_loan_status_borrower ON loan (status, borrower_id);`
-    - `CREATE INDEX idx_repay_status_due ON repayment_schedule (status, due_date);`
+  - Implemented indexes: `user(email, role, created_at)`, `wallet_account(user_id, status)`, `kyc_data(user_id, verification_status)`, `loan_application(applicant_id, status, created_at)`, `loan(borrower_id, lender_id, status, maturity_date)`, `transaction_ledger(wallet_id, loan_id, transaction_type, created_at)`, `repayment_schedule(loan_id, due_date, status)`, `audit_log(user_id, (table_name,record_id), created_at)`
 
 - **Transactions & Consistency Flows:**
-  - **Disbursement:** create/attach loan → insert `loan_disbursement` ledger → update wallet balance → insert schedule; **single transaction**.
-  - **Repayment:** insert `loan_repayment` ledger → update schedule row → update loan outstanding; **single transaction**.
-  - **Invariant:** `balance_after = balance_before ± amount` checked in service logic.
+  - **Disbursement:** create loan, insert loan_disbursement to ledger, update wallet balance, insert repayment schedule; all within a single transaction
+  - **Repayment:** insert loan_repayment to ledger, update schedule row, update loan outstanding balance; all within a single transaction
+  - **Invariant:** balance_after equals balance_before plus or minus amount, validated in service logic
 
 ---
 
-## 5) Security Approach
-- **Authentication:** JWT tokens (short-lived). 
-- **Password Hashing:** **bcrypt** (cost ≥ 12) or **argon2id**.
+## 5 Security Approach
+- **Authentication:** JWT tokens with short expiration times using the PyJWT library
+- **Password Hashing:** SHA256 hash algorithm for password storage
 - **Authorization:**
-  - **Application roles:** Borrower, Lender, Admin (enforced in middleware/controllers).
+  - **Application roles:** Borrower, Lender, and Admin roles enforced in middleware and controllers
   - **Database roles:** 
-    - `db_admin` — full DDL/DML (ops only).
-    - `app_user` — DML on app tables (no DDL).
-    - `read_only_analyst` — SELECT only.
-- **Input Safety:** Pydantic validation + parameterized SQL/ORM; strict allow-lists for enums.
-- **Secrets:** ENV vars; app never connects as `db_admin` in production.
-- **Auditability:** `audit_log` captures who/when/what, IP, and user agent for sensitive actions.
+    - `db_admin` for full DDL and DML operations and schema management
+    - `app_user` for DML operations: SELECT, INSERT, UPDATE, DELETE on application tables
+    - `read_only_analyst` for SELECT only, used for reporting and analytics
+- **Input Safety:** Pydantic validation combined with SQLAlchemy ORM parameterized queries and strict allow-lists for enum values
+- **Secrets:** Environment variables managed through python-dotenv with database credentials stored in `.env` file
+- **Auditability:** The `audit_log` table captures user actions, timestamps, IP addresses, and user agents through database triggers
 
 ---
 
-## 6) Entitlements (Role → Functions)
-- **Borrower:** create/view own applications; view KYC status; view own loans & schedules; make repayments; view own wallet/ledger.
-- **Lender:** view loans they fund; view repayments and portfolio summaries.
-- **Admin:** manage users; approve KYC; review/approve applications; disburse/cancel loans; mark defaults/paid_off; correct ledger issues (all changes audited).
+## 6 Entitlements (Role → Functions)
+- **Borrower:** create and view own applications; view KYC status; view own loans and schedules; make repayments; view own wallet and ledger
+- **Lender:** view loans they fund; view repayments and portfolio summaries
+- **Admin:** manage users; approve KYC; review and approve applications; disburse and cancel loans; mark defaults and paid_off status; correct ledger issues with all changes audited
 
 **DB Execution Context:**
-- API runs as `app_user` (least privilege).
-- Analytics dashboards run as `read_only_analyst`.
-- Schema changes and data loads run as `db_admin`.
+- API currently runs with admin credentials for development
+- Analytics dashboards run as `read_only_analyst`
+- Schema changes and data loads run as `db_admin`
 
 ---
 
-## 7) Interface Design
-- **Web UI** with role-aware navigation and dashboards.
-- **Representative REST API** (non-exhaustive):
-  - `POST /auth/login`, `POST /users`, `GET /users/me`
-  - `GET/POST /kyc`, `PATCH /kyc/{id}`
-  - `POST /applications`, `GET /applications?status=...`, `PATCH /applications/{id}`
-  - `POST /loans` (from approved applications), `GET /loans?status=...`, `PATCH /loans/{id}`
-  - `GET /loans/{id}/schedule`, `POST /loans/{id}/repay`
-  - `GET /wallets/{userId}`, `GET /wallets/{id}/ledger`
-  - `GET /reports/overdue`, `GET /reports/portfolio`, `GET /reports/cashflow`
+## 7 Interface Design
+- **Web UI** with role-aware navigation and dashboards
+- **REST API Implementation:**
+  - **Authentication:** `POST /auth/login`, `POST /auth/refresh`
+  - **Users:** `POST /users`, `GET /users`, `GET /users/{user_id}`, `PUT /users/{user_id}`, `DELETE /users/{user_id}`
+  - **KYC:** `POST /users/{user_id}/kyc`, `GET /users/{user_id}/kyc`
+  - **Wallets:** `GET /users/{user_id}/accounts`, `POST /users/{user_id}/accounts`, `GET /accounts/{account_id}/transactions`
+  - **Loan Applications:** `GET /users/{user_id}/loan-application`, `POST /users/{user_id}/loan-application`, `PUT /users/{user_id}/loan-applications/{application_id}`
+  - **Loans:** `GET /users/{user_id}/loans`, `GET /users/{user_id}/loans/{loan_id}`, `POST /loan-offers/{offer_id}/accept`
+  - **Repayments:** `GET /users/{user_id}/loans/{loan_id}/payments`, `POST /users/{user_id}/loans/{loan_id}/payments`
+  - **Portfolio:** `GET /users/{user_id}/portfolio/summary`, `GET /users/{user_id}/portfolio/loans`
+  - **Risk Assessment:** `GET /users/{user_id}/loan-applications/{application_id}/risk-assessment`
+  - **Offers:** `GET /users/{user_id}/loan-applications/{application_id}/offers`, `POST /users/{user_id}/loan-applications/{application_id}/offers`
+  - **Auto-Lending:** `GET /users/{user_id}/auto-lending/config`, `PUT /users/{user_id}/auto-lending/config`
+  - **Health Check:** `GET /health`
 
 ---
 
-## 8) Scalability Considerations
-- Stateless API containers allow horizontal scaling on AWS.
-- MySQL tuned via pragmatic indexing; read-only reporting through `read_only_analyst` reductions.
-- Optional API-level caching for aggregate/overdue queries.
-- Backups and restore runbooks ensure recoverability.
+## 8 Scalability Considerations
+- Stateless API containers allow horizontal scaling on AWS or other cloud platforms
+- AWS RDS MySQL tuned with indexing strategy on all frequently queried columns
+- Read-only reporting through `read_only_analyst` role reduces load on primary database connections
+- SQLAlchemy connection pooling for efficient database resource management
+- API-level caching for aggregate and overdue queries
+- AWS RDS automated backups and point-in-time recovery ensure data durability
 
 ---
 
-## 9) Risks & Mitigations
-- **Ledger/Balance Drift:** Wrap multi-table updates in DB transactions; enforce invariants; schedule reconciliation jobs.
-- **Business Rule Drift:** Keep rules in service layer first; add DB CHECKs/triggers when policy stabilizes (avoids churn).
-- **PII Exposure (KYC):** Restrict KYC views to Admin; mask PII in logs; avoid exporting raw documents; store only necessary fields.
+## 9 Risks & Mitigations
+- **Ledger/Balance Drift:** Multi-table updates are wrapped in database transactions with invariant enforcement and scheduled reconciliation jobs
+- **Business Rule Drift:** Rules are maintained in the service layer first with database CHECK constraints and triggers added as policies stabilize
+- **PII Exposure:** KYC views are restricted to Admin role with PII masked in logs and only necessary fields stored in the database
 
 ---
 
-## 10) Testing Strategy
-- **Unit Tests:** validation schemas; payment math (installments, interest split); state transitions.
-- **Integration Tests:** end-to-end apply→approve→disburse→repay on a test DB.
-- **Data Integrity Tests:** FK/CHECK violations; negative balances blocked; idempotency of disbursement and repayment flows.
-- **Security Tests:** authZ enforcement; injection attempts; password policy; audit coverage.
+## 10 Testing Strategy
+- **Unit Tests:** validation schemas, payment math for installments and interest split, state transitions
+- **Integration Tests:** end-to-end testing of apply, approve, disburse, and repay workflows on a test database
+- **Data Integrity Tests:** foreign key and CHECK constraint violations, negative balance blocking, idempotency of disbursement and repayment flows
+- **Security Tests:** authorization enforcement, SQL injection attempts, password policy, audit coverage
+- **Testing Framework:** pytest with test suite in `src/api_server/server_test.py`
+- **Midterm Demonstration:** Test log generated via `generate_midterm_log.sh` covering all 11 database requirements
 
 ---
 
-## 11) Deployment & Monitoring
-- **Hosting:** AWS ECS (Fargate) container + Amazon RDS for MySQL.
-- **Configuration:** ENV-based DB credentials; app uses `app_user` in prod.
-- **Migrations:** Apply provided `schema.sql`; seed demo data for classroom testing.
-- **Monitoring:** App/DB logs; slow query log; alerting is minimal but sufficient for course scope.
-- **Backups:** Daily snapshots; verified restore process for demonstrations.
+## 11 Deployment & Monitoring
+- **Hosting:** 
+  - **Database:** AWS RDS for MySQL 8.0.42 at micro-lending.cmvo24soe2b0.us-east-1.rds.amazonaws.com
+  - **Application:** FastAPI backend deployed via AWS ECS, Railway, or similar container platforms
+- **Configuration:** Environment-based database credentials via python-dotenv with credentials stored in `.env` file
+- **Database Roles:**
+  - Development uses `admin` credentials for full access
+  - `app_user` role available for application-level DML operations
+  - `read_only_analyst` role for reporting queries
+- **Migrations:** Schema applied via `schema.sql` using MySQL client with DDL for all 8 tables, views, stored procedures, triggers, and roles
+- **Demo Data:** Seed data included in `schema.sql` for testing with 6 users, wallets, loans, and applications
+- **Monitoring:** 
+  - Application logs via FastAPI
+  - AWS RDS CloudWatch metrics for database performance
+  - MySQL slow query log enabled for optimization
+- **Backups:** AWS RDS automated daily snapshots with point-in-time recovery
 
 ---
 
-## Appendix A — Optional, Non-Breaking Enhancements
-- Use MySQL `JSON` for `audit_log.old_values/new_values`:
+## Appendix A — Additional Enhancements
+- Use MySQL JSON data type for `audit_log.old_values` and `audit_log.new_values`:
   ```sql
   ALTER TABLE audit_log
     MODIFY old_values JSON NULL,
     MODIFY new_values JSON NULL;
   ```
-- Composite index for borrower’s active loans:
+- Composite index for borrower's active loans:
   ```sql
   CREATE INDEX idx_loan_status_borrower ON loan (status, borrower_id);
   ```
-- App-level guardrail: “≤ 3 active loans per borrower” validated before `loan` insert/update.
+- Application-level limit of 3 active loans per borrower validated before loan insert or update

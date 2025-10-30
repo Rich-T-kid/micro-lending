@@ -11,7 +11,6 @@ Welcome to our project! This document outlines the people involved, their roles,
 | Richard Baah| [@Rich-T-kid](#) | Back-end Developer   | rbb98@scarletmail.rutgers.edu  |
 | Jose Lamela | [@jose0andres](#) | Data Engineer | jal601@scarletmail.rutgers.edu |
 | Saksham Mehta |[@sakshampix](#)| Frontend Developer & Back-end | |sm2683@scarletmail.rutgers.edu
-| You?            | [Your GitHub ID]      | tbd          | [Your Contact Info]            |
 
 ---
 

@@ -402,7 +402,7 @@ BEGIN
            (v_outstanding - p_payment_amount) AS remaining_balance;
 END //
 
--- Procedure 3: Calculate comprehensive risk score
+-- Procedure 3: Calculate risk score
 CREATE PROCEDURE sp_calculate_risk_score(
     IN p_user_id INT,
     IN p_loan_amount DECIMAL(15,2),
