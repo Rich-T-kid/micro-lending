@@ -266,6 +266,425 @@ INSERT INTO audit_log (user_id, action, table_name, record_id, new_values, ip_ad
 ON DUPLICATE KEY UPDATE user_id=user_id;
 
 -- =============================================================================
+-- STORED PROCEDURES - REQUIREMENT 3
+-- =============================================================================
+
+DROP PROCEDURE IF EXISTS sp_apply_for_loan;
+DROP PROCEDURE IF EXISTS sp_process_repayment;
+DROP PROCEDURE IF EXISTS sp_calculate_risk_score;
+
+DELIMITER //
+
+-- Procedure 1: Apply for a loan
+CREATE PROCEDURE sp_apply_for_loan(
+    IN p_applicant_id INT,
+    IN p_loan_amount DECIMAL(15,2),
+    IN p_purpose TEXT,
+    IN p_term_months INT
+)
+BEGIN
+    DECLARE v_credit_score INT;
+    DECLARE v_interest_rate DECIMAL(5,2);
+    
+    -- Error handling
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        SELECT 'Error: Loan application failed' AS error_message;
+    END;
+    
+    START TRANSACTION;
+    
+    -- Get applicant's credit score
+    SELECT credit_score INTO v_credit_score
+    FROM user
+    WHERE id = p_applicant_id;
+    
+    -- Calculate interest rate based on credit score
+    SET v_interest_rate = CASE
+        WHEN v_credit_score >= 750 THEN 5.0
+        WHEN v_credit_score >= 650 THEN 8.0
+        WHEN v_credit_score >= 550 THEN 12.0
+        ELSE 15.0
+    END;
+    
+    -- Insert loan application
+    INSERT INTO loan_application (
+        applicant_id, 
+        amount, 
+        purpose, 
+        term_months,
+        interest_rate,
+        status
+    ) VALUES (
+        p_applicant_id,
+        p_loan_amount,
+        p_purpose,
+        p_term_months,
+        v_interest_rate,
+        'pending'
+    );
+    
+    COMMIT;
+    SELECT LAST_INSERT_ID() AS application_id, 
+           v_interest_rate AS suggested_interest_rate,
+           'Application submitted successfully' AS message;
+END //
+
+-- Procedure 2: Process repayment
+CREATE PROCEDURE sp_process_repayment(
+    IN p_loan_id INT,
+    IN p_payment_amount DECIMAL(15,2),
+    IN p_borrower_wallet_id INT
+)
+BEGIN
+    DECLARE v_outstanding DECIMAL(15,2);
+    DECLARE v_borrower_balance DECIMAL(15,2);
+    
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        SELECT 'Error: Repayment failed' AS error_message;
+    END;
+    
+    START TRANSACTION;
+    
+    -- Check borrower's wallet balance
+    SELECT balance INTO v_borrower_balance
+    FROM wallet_account
+    WHERE id = p_borrower_wallet_id
+    FOR UPDATE;
+    
+    IF v_borrower_balance < p_payment_amount THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Insufficient funds for repayment';
+    END IF;
+    
+    -- Get outstanding balance
+    SELECT outstanding_balance INTO v_outstanding
+    FROM loan
+    WHERE id = p_loan_id
+    FOR UPDATE;
+    
+    -- Deduct from borrower's wallet
+    UPDATE wallet_account
+    SET balance = balance - p_payment_amount
+    WHERE id = p_borrower_wallet_id;
+    
+    -- Update loan outstanding balance
+    UPDATE loan
+    SET outstanding_balance = outstanding_balance - p_payment_amount,
+        status = CASE 
+            WHEN (outstanding_balance - p_payment_amount) <= 0 THEN 'paid_off'
+            ELSE status
+        END
+    WHERE id = p_loan_id;
+    
+    -- Create transaction record
+    INSERT INTO transaction_ledger (
+        from_wallet_id,
+        to_wallet_id,
+        amount,
+        transaction_type,
+        reference_id,
+        status
+    ) VALUES (
+        p_borrower_wallet_id,
+        NULL,
+        p_payment_amount,
+        'repayment',
+        p_loan_id,
+        'completed'
+    );
+    
+    COMMIT;
+    SELECT 'Repayment processed successfully' AS message, 
+           (v_outstanding - p_payment_amount) AS remaining_balance;
+END //
+
+-- Procedure 3: Calculate comprehensive risk score
+CREATE PROCEDURE sp_calculate_risk_score(
+    IN p_user_id INT,
+    IN p_loan_amount DECIMAL(15,2),
+    OUT p_risk_score DECIMAL(5,2),
+    OUT p_risk_category VARCHAR(20)
+)
+BEGIN
+    DECLARE v_credit_score INT;
+    DECLARE v_active_loans INT;
+    DECLARE v_total_borrowed DECIMAL(15,2);
+    DECLARE v_payment_history INT;
+    
+    -- Get user's credit score
+    SELECT credit_score INTO v_credit_score
+    FROM user
+    WHERE id = p_user_id;
+    
+    -- Count active loans
+    SELECT COUNT(*) INTO v_active_loans
+    FROM loan
+    WHERE borrower_id = p_user_id AND status = 'active';
+    
+    -- Total currently borrowed
+    SELECT COALESCE(SUM(outstanding_balance), 0) INTO v_total_borrowed
+    FROM loan
+    WHERE borrower_id = p_user_id AND status = 'active';
+    
+    -- Payment history (count on-time payments)
+    SELECT COUNT(*) INTO v_payment_history
+    FROM repayment_schedule
+    WHERE loan_id IN (SELECT id FROM loan WHERE borrower_id = p_user_id)
+    AND status = 'paid';
+    
+    -- Calculate risk score (0-100, higher = riskier)
+    SET p_risk_score = 
+        -- Credit score factor (0-40 points)
+        (CASE
+            WHEN v_credit_score >= 750 THEN 10
+            WHEN v_credit_score >= 650 THEN 20
+            WHEN v_credit_score >= 550 THEN 30
+            ELSE 40
+        END) +
+        -- Existing loans factor (0-30 points)
+        (CASE
+            WHEN v_active_loans = 0 THEN 5
+            WHEN v_active_loans <= 2 THEN 15
+            ELSE 30
+        END) +
+        -- Debt-to-loan ratio (0-30 points)
+        (CASE
+            WHEN v_total_borrowed = 0 THEN 5
+            WHEN (v_total_borrowed / p_loan_amount) < 2 THEN 15
+            ELSE 30
+        END);
+    
+    -- Categorize risk
+    SET p_risk_category = CASE
+        WHEN p_risk_score <= 30 THEN 'Low Risk'
+        WHEN p_risk_score <= 60 THEN 'Medium Risk'
+        ELSE 'High Risk'
+    END;
+END //
+
+DELIMITER ;
+
+
+-- =============================================================================
+-- VIEWS - REQUIREMENT 4
+-- =============================================================================
+
+-- View 1: Simple view - Active loans
+CREATE OR REPLACE VIEW v_active_loans AS
+SELECT 
+    l.id AS loan_id,
+    l.principal_amount,
+    l.interest_rate,
+    l.outstanding_balance,
+    l.status,
+    l.disbursed_at,
+    l.maturity_date,
+    b.full_name AS borrower_name,
+    b.email AS borrower_email,
+    le.full_name AS lender_name
+FROM loan l
+JOIN user b ON l.borrower_id = b.id
+LEFT JOIN user le ON l.lender_id = le.id
+WHERE l.status = 'active';
+
+-- View 2: Complex view - Portfolio dashboard with aggregations
+CREATE OR REPLACE VIEW v_portfolio_dashboard AS
+SELECT 
+    u.id AS user_id,
+    u.full_name,
+    u.email,
+    u.role,
+    u.credit_score,
+    w.balance AS wallet_balance,
+    -- Lending metrics (for lenders)
+    COALESCE(lender_stats.loans_funded, 0) AS loans_funded,
+    COALESCE(lender_stats.total_funded, 0) AS total_amount_lent,
+    COALESCE(lender_stats.active_investments, 0) AS active_investments,
+    COALESCE(lender_stats.total_outstanding, 0) AS outstanding_receivables,
+    -- Borrowing metrics (for borrowers)
+    COALESCE(borrower_stats.loans_taken, 0) AS loans_taken,
+    COALESCE(borrower_stats.total_borrowed, 0) AS total_amount_borrowed,
+    COALESCE(borrower_stats.active_loans, 0) AS active_loans,
+    COALESCE(borrower_stats.total_owed, 0) AS total_amount_owed,
+    -- Calculated metrics
+    CASE 
+        WHEN u.role = 'lender' THEN 
+            ROUND((COALESCE(lender_stats.total_outstanding, 0) / NULLIF(COALESCE(lender_stats.total_funded, 0), 0)) * 100, 2)
+        ELSE NULL
+    END AS portfolio_at_risk_pct,
+    CASE
+        WHEN u.role = 'borrower' THEN
+            ROUND((COALESCE(borrower_stats.total_owed, 0) / NULLIF(w.balance, 0)) * 100, 2)
+        ELSE NULL
+    END AS debt_to_wallet_ratio
+FROM user u
+LEFT JOIN wallet_account w ON u.id = w.user_id
+LEFT JOIN (
+    -- Lender statistics
+    SELECT 
+        lender_id,
+        COUNT(*) AS loans_funded,
+        SUM(principal_amount) AS total_funded,
+        SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active_investments,
+        SUM(CASE WHEN status = 'active' THEN outstanding_balance ELSE 0 END) AS total_outstanding
+    FROM loan
+    WHERE lender_id IS NOT NULL
+    GROUP BY lender_id
+) lender_stats ON u.id = lender_stats.lender_id
+LEFT JOIN (
+    -- Borrower statistics
+    SELECT 
+        borrower_id,
+        COUNT(*) AS loans_taken,
+        SUM(principal_amount) AS total_borrowed,
+        SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active_loans,
+        SUM(CASE WHEN status = 'active' THEN outstanding_balance ELSE 0 END) AS total_owed
+    FROM loan
+    GROUP BY borrower_id
+) borrower_stats ON u.id = borrower_stats.borrower_id;
+
+-- View 3: Security view - User profile without sensitive data
+CREATE OR REPLACE VIEW v_user_profile_safe AS
+SELECT 
+    id,
+    email,
+    full_name,
+    role,
+    phone,
+    LEFT(address, 20) AS address_preview,  -- Only show first 20 chars
+    CASE 
+        WHEN credit_score >= 750 THEN 'Excellent'
+        WHEN credit_score >= 650 THEN 'Good'
+        WHEN credit_score >= 550 THEN 'Fair'
+        ELSE 'Poor'
+    END AS credit_rating,
+    is_active,
+    created_at
+FROM user;
+
+
+-- =============================================================================
+-- AUDIT TRIGGERS - REQUIREMENT 7
+-- =============================================================================
+
+DROP TRIGGER IF EXISTS trg_user_before_insert;
+DROP TRIGGER IF EXISTS trg_user_after_insert;
+DROP TRIGGER IF EXISTS trg_loan_after_update;
+DROP TRIGGER IF EXISTS trg_wallet_after_update;
+
+DELIMITER //
+
+-- Trigger 1: BEFORE INSERT on user - validate and format data
+CREATE TRIGGER trg_user_before_insert
+BEFORE INSERT ON user
+FOR EACH ROW
+BEGIN
+    -- Validate email format
+    IF NEW.email NOT LIKE '%_@__%.__%' THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Invalid email format';
+    END IF;
+    
+    -- Validate credit score range
+    IF NEW.credit_score IS NOT NULL AND (NEW.credit_score < 300 OR NEW.credit_score > 850) THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Credit score must be between 300 and 850';
+    END IF;
+    
+    -- Normalize email to lowercase
+    SET NEW.email = LOWER(NEW.email);
+    
+    -- Normalize role
+    SET NEW.role = LOWER(NEW.role);
+END //
+
+-- Trigger 2: AFTER INSERT on user - audit log
+CREATE TRIGGER trg_user_after_insert
+AFTER INSERT ON user
+FOR EACH ROW
+BEGIN
+    INSERT INTO audit_log (
+        table_name,
+        record_id,
+        action,
+        user_id,
+        new_values
+    ) VALUES (
+        'user',
+        NEW.id,
+        'INSERT',
+        NEW.id,
+        JSON_OBJECT(
+            'email', NEW.email,
+            'full_name', NEW.full_name,
+            'role', NEW.role,
+            'credit_score', NEW.credit_score
+        )
+    );
+END //
+
+-- Trigger 3: AFTER UPDATE on loan - audit status changes
+CREATE TRIGGER trg_loan_after_update
+AFTER UPDATE ON loan
+FOR EACH ROW
+BEGIN
+    IF OLD.status != NEW.status OR OLD.outstanding_balance != NEW.outstanding_balance THEN
+        INSERT INTO audit_log (
+            table_name,
+            record_id,
+            action,
+            user_id,
+            old_values,
+            new_values
+        ) VALUES (
+            'loan',
+            NEW.id,
+            'UPDATE',
+            NEW.borrower_id,
+            JSON_OBJECT(
+                'status', OLD.status,
+                'outstanding_balance', OLD.outstanding_balance
+            ),
+            JSON_OBJECT(
+                'status', NEW.status,
+                'outstanding_balance', NEW.outstanding_balance
+            )
+        );
+    END IF;
+END //
+
+-- Trigger 4: AFTER UPDATE on wallet_account - audit balance changes
+CREATE TRIGGER trg_wallet_after_update
+AFTER UPDATE ON wallet_account
+FOR EACH ROW
+BEGIN
+    IF OLD.balance != NEW.balance THEN
+        INSERT INTO audit_log (
+            table_name,
+            record_id,
+            action,
+            user_id,
+            old_values,
+            new_values
+        ) VALUES (
+            'wallet_account',
+            NEW.id,
+            'UPDATE',
+            NEW.user_id,
+            JSON_OBJECT('balance', OLD.balance),
+            JSON_OBJECT('balance', NEW.balance)
+        );
+    END IF;
+END //
+
+DELIMITER ;
+
+
+-- =============================================================================
 -- USER ACCESS CONTROL - REQUIREMENT 2
 -- =============================================================================
 
