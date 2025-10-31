@@ -1,1 +1,0 @@
-select * from rating_review

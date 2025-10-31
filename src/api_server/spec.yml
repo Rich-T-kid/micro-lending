@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: Microlending Platform API
   description: |
-    Comprehensive API for a microlending platform supporting borrowers, lenders, and administrative operations.
+    API for a microlending platform supporting borrowers, lenders, and administrative operations.
     
     ## Key Features
     - Identity verification and KYC compliance
