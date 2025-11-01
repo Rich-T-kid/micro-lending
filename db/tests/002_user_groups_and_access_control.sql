@@ -1,0 +1,11 @@
+USE microlending;
+SELECT User, Host FROM mysql.user WHERE User IN ('db_admin', 'app_user', 'read_only_analyst') ORDER BY User;
+SHOW GRANTS FOR 'db_admin'@'%';
+SHOW GRANTS FOR 'app_user'@'%';
+SHOW GRANTS FOR 'read_only_analyst'@'%';
+SELECT User, Host FROM mysql.user WHERE User IN ('admin_user', 'app_backend', 'analyst_user') ORDER BY User;
+SHOW GRANTS FOR 'app_user'@'%';
+REVOKE INSERT ON microlending.audit_log FROM 'app_user'@'%';
+ SHOW GRANTS FOR 'app_user'@'%';
+ GRANT INSERT ON microlending.audit_log TO 'app_user'@'%';
+SHOW GRANTS FOR 'app_user'@'%';
