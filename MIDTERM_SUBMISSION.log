@@ -1,0 +1,833 @@
+================================================================================
+DATABASE ADMINISTRATION MIDTERM PROJECT
+Micro-Lending Platform Database
+================================================================================
+
+Student: Saksham Mehta , Jose Lamela , Richard Baah
+Date: October 30, 2025
+Database: MySQL 8.0.42 on AWS RDS
+Project: Micro-Lending Platform
+
+================================================================================
+
+
+
+==> Database Connection Test
+
+Query: SELECT VERSION()
+
+VERSION()
+8.0.42
+
+
+==> Current Database
+
+Query: SELECT DATABASE()
+
+DATABASE()
+microlending
+
+
+================================================================================
+1. DATABASE OBJECTS CREATION
+================================================================================
+
+
+==> Step 1.1: Database Tables
+
+Query: SHOW TABLES
+
+Tables_in_microlending
+audit_log
+kyc_data
+loan
+loan_application
+repayment_schedule
+transaction_ledger
+user
+v_active_loans
+v_application_offers
+v_loan_cash_flows
+v_loan_delinquency
+v_overdue_installments
+v_portfolio_dashboard
+v_thread_latest_message
+v_user_profile_safe
+wallet_account
+
+
+==> Step 1.2: USER Table Structure
+
+Query: DESCRIBE user
+
+Field	Type	Null	Key	Default	Extra
+id	int	NO	PRI	NULL	auto_increment
+email	varchar(255)	NO	UNI	NULL	
+password_hash	varchar(255)	NO		NULL	
+full_name	varchar(255)	YES		NULL	
+role	varchar(50)	YES	MUL	borrower	
+phone	varchar(20)	YES		NULL	
+address	text	YES		NULL	
+credit_score	int	YES		NULL	
+is_active	tinyint(1)	YES		1	
+created_at	datetime	YES	MUL	CURRENT_TIMESTAMP	DEFAULT_GENERATED
+updated_at	datetime	YES		CURRENT_TIMESTAMP	DEFAULT_GENERATED on update CURRENT_TIMESTAMP
+
+
+==> Step 1.3: WALLET_ACCOUNT Table Structure
+
+Query: DESCRIBE wallet_account
+
+Field	Type	Null	Key	Default	Extra
+id	int	NO	PRI	NULL	auto_increment
+user_id	int	NO	MUL	NULL	
+balance	decimal(15,2)	YES		0.00	
+currency	varchar(3)	YES		USD	
+account_number	varchar(50)	YES	UNI	NULL	
+status	varchar(20)	YES	MUL	active	
+created_at	datetime	YES		CURRENT_TIMESTAMP	DEFAULT_GENERATED
+updated_at	datetime	YES		CURRENT_TIMESTAMP	DEFAULT_GENERATED on update CURRENT_TIMESTAMP
+
+
+==> Step 1.4: LOAN Table Structure
+
+Query: DESCRIBE loan
+
+Field	Type	Null	Key	Default	Extra
+id	int	NO	PRI	NULL	auto_increment
+application_id	int	YES	MUL	NULL	
+borrower_id	int	NO	MUL	NULL	
+lender_id	int	YES	MUL	NULL	
+principal_amount	decimal(15,2)	NO		NULL	
+interest_rate	decimal(5,2)	NO		NULL	
+term_months	int	NO		NULL	
+monthly_payment	decimal(15,2)	YES		NULL	
+outstanding_balance	decimal(15,2)	YES		NULL	
+status	varchar(20)	YES	MUL	active	
+disbursed_at	datetime	YES		NULL	
+maturity_date	date	YES	MUL	NULL	
+created_at	datetime	YES		CURRENT_TIMESTAMP	DEFAULT_GENERATED
+updated_at	datetime	YES		CURRENT_TIMESTAMP	DEFAULT_GENERATED on update CURRENT_TIMESTAMP
+
+
+==> Step 1.5: USER Table Indexes
+
+Query: SHOW INDEX FROM user
+
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible	Expression
+user	0	PRIMARY	1	id	A	8	NULL	NULL		BTREE			YES	NULL
+user	0	email	1	email	A	8	NULL	NULL		BTREE			YES	NULL
+user	1	idx_user_email	1	email	A	8	NULL	NULL		BTREE			YES	NULL
+user	1	idx_user_role	1	role	A	3	NULL	NULL	YES	BTREE			YES	NULL
+user	1	idx_user_created	1	created_at	A	8	NULL	NULL	YES	BTREE			YES	NULL
+
+
+==> Step 1.6: LOAN_APPLICATION Indexes
+
+Query: SHOW INDEX FROM loan_application
+
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible	Expression
+loan_application	0	PRIMARY	1	id	A	5	NULL	NULL		BTREE			YES	NULL
+loan_application	1	reviewed_by	1	reviewed_by	A	2	NULL	NULL	YES	BTREE			YES	NULL
+loan_application	1	idx_app_applicant	1	applicant_id	A	3	NULL	NULL		BTREE			YES	NULL
+loan_application	1	idx_app_status	1	status	A	2	NULL	NULL	YES	BTREE			YES	NULL
+loan_application	1	idx_app_created	1	created_at	A	5	NULL	NULL	YES	BTREE			YES	NULL
+
+
+==> Step 1.7: LOAN Table Indexes
+
+Query: SHOW INDEX FROM loan
+
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible	Expression
+loan	0	PRIMARY	1	id	A	2	NULL	NULL		BTREE			YES	NULL
+loan	1	application_id	1	application_id	A	2	NULL	NULL	YES	BTREE			YES	NULL
+loan	1	idx_loan_borrower	1	borrower_id	A	2	NULL	NULL		BTREE			YES	NULL
+loan	1	idx_loan_lender	1	lender_id	A	2	NULL	NULL	YES	BTREE			YES	NULL
+loan	1	idx_loan_status	1	status	A	1	NULL	NULL	YES	BTREE			YES	NULL
+loan	1	idx_loan_maturity	1	maturity_date	A	2	NULL	NULL	YES	BTREE			YES	NULL
+
+
+==> Step 1.8: Constraints Summary
+
+Query: SELECT TABLE_NAME, CONSTRAINT_NAME, CONSTRAINT_TYPE FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS WHERE TABLE_SCHEMA = 'microlending' AND TABLE_NAME IN ('user', 'wallet_account', 'loan', 'loan_application') ORDER BY TABLE_NAME, CONSTRAINT_TYPE
+
+TABLE_NAME	CONSTRAINT_NAME	CONSTRAINT_TYPE
+loan	chk_loan_interest_rate	CHECK
+loan	chk_loan_status	CHECK
+loan	chk_loan_term	CHECK
+loan	chk_outstanding_balance	CHECK
+loan	chk_principal_positive	CHECK
+loan	loan_ibfk_1	FOREIGN KEY
+loan	loan_ibfk_2	FOREIGN KEY
+loan	loan_ibfk_3	FOREIGN KEY
+loan	PRIMARY	PRIMARY KEY
+loan_application	chk_app_status	CHECK
+loan_application	chk_term_months	CHECK
+loan_application	chk_loan_amount	CHECK
+loan_application	chk_interest_rate	CHECK
+loan_application	loan_application_ibfk_2	FOREIGN KEY
+loan_application	loan_application_ibfk_1	FOREIGN KEY
+loan_application	PRIMARY	PRIMARY KEY
+user	chk_credit_score	CHECK
+user	chk_role	CHECK
+user	PRIMARY	PRIMARY KEY
+user	email	UNIQUE
+wallet_account	chk_balance_positive	CHECK
+wallet_account	chk_wallet_status	CHECK
+wallet_account	wallet_account_ibfk_1	FOREIGN KEY
+wallet_account	PRIMARY	PRIMARY KEY
+wallet_account	account_number	UNIQUE
+
+
+==> Step 1.9: Foreign Key Relationships
+
+Query: SELECT kcu.TABLE_NAME, kcu.COLUMN_NAME, kcu.REFERENCED_TABLE_NAME, kcu.REFERENCED_COLUMN_NAME, rc.DELETE_RULE FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc ON kcu.CONSTRAINT_NAME = rc.CONSTRAINT_NAME WHERE kcu.TABLE_SCHEMA = 'microlending' AND kcu.REFERENCED_TABLE_NAME IS NOT NULL ORDER BY kcu.TABLE_NAME LIMIT 10
+
+TABLE_NAME	COLUMN_NAME	REFERENCED_TABLE_NAME	REFERENCED_COLUMN_NAME	DELETE_RULE
+audit_log	user_id	user	id	SET NULL
+kyc_data	user_id	user	id	CASCADE
+kyc_data	verified_by	user	id	SET NULL
+loan	application_id	loan_application	id	SET NULL
+loan	borrower_id	user	id	RESTRICT
+loan	lender_id	user	id	SET NULL
+loan_application	applicant_id	user	id	RESTRICT
+loan_application	reviewed_by	user	id	SET NULL
+repayment_schedule	loan_id	loan	id	CASCADE
+transaction_ledger	wallet_id	wallet_account	id	CASCADE
+
+
+================================================================================
+2. USER GROUPS AND ACCESS CONTROL
+================================================================================
+
+
+==> Step 2.1: MySQL Roles
+
+Query: SELECT User, Host FROM mysql.user WHERE User IN ('db_admin', 'app_user', 'read_only_analyst') ORDER BY User
+
+User	Host
+app_user	%
+db_admin	%
+read_only_analyst	%
+
+
+==> Step 2.2: db_admin Privileges
+
+Query: SHOW GRANTS FOR 'db_admin'@'%'
+
+Grants for db_admin@%
+GRANT USAGE ON *.* TO `db_admin`@`%`
+GRANT ALL PRIVILEGES ON `microlending`.* TO `db_admin`@`%`
+
+
+==> Step 2.3: app_user Privileges
+
+Query: SHOW GRANTS FOR 'app_user'@'%'
+
+Grants for app_user@%
+GRANT USAGE ON *.* TO `app_user`@`%`
+GRANT SELECT, INSERT ON `microlending`.`audit_log` TO `app_user`@`%`
+GRANT SELECT, INSERT, UPDATE ON `microlending`.`kyc_data` TO `app_user`@`%`
+GRANT SELECT, INSERT, UPDATE, DELETE ON `microlending`.`loan_application` TO `app_user`@`%`
+GRANT SELECT, INSERT, UPDATE, DELETE ON `microlending`.`loan` TO `app_user`@`%`
+GRANT SELECT, INSERT, UPDATE, DELETE ON `microlending`.`repayment_schedule` TO `app_user`@`%`
+GRANT SELECT, INSERT, UPDATE, DELETE ON `microlending`.`transaction_ledger` TO `app_user`@`%`
+GRANT SELECT, INSERT, UPDATE, DELETE ON `microlending`.`user` TO `app_user`@`%`
+GRANT SELECT, INSERT, UPDATE, DELETE ON `microlending`.`wallet_account` TO `app_user`@`%`
+
+
+==> Step 2.4: read_only_analyst Privileges
+
+Query: SHOW GRANTS FOR 'read_only_analyst'@'%'
+
+Grants for read_only_analyst@%
+GRANT USAGE ON *.* TO `read_only_analyst`@`%`
+GRANT SELECT ON `microlending`.* TO `read_only_analyst`@`%`
+GRANT SELECT ON `microlending`.`audit_log` TO `read_only_analyst`@`%`
+GRANT SELECT ON `microlending`.`loan_application` TO `read_only_analyst`@`%`
+GRANT SELECT ON `microlending`.`loan` TO `read_only_analyst`@`%`
+GRANT SELECT ON `microlending`.`repayment_schedule` TO `read_only_analyst`@`%`
+GRANT SELECT ON `microlending`.`transaction_ledger` TO `read_only_analyst`@`%`
+GRANT SELECT ON `microlending`.`user` TO `read_only_analyst`@`%`
+GRANT SELECT ON `microlending`.`wallet_account` TO `read_only_analyst`@`%`
+
+
+==> Step 2.5: Test Users
+
+Query: SELECT User, Host FROM mysql.user WHERE User IN ('admin_user', 'app_backend', 'analyst_user') ORDER BY User
+
+User	Host
+admin_user	%
+analyst_user	%
+app_backend	%
+
+
+==> Step 2.6: Demonstrate REVOKE - Before
+
+Query: SHOW GRANTS FOR 'app_user'@'%'
+
+Grants for app_user@%
+GRANT USAGE ON *.* TO `app_user`@`%`
+GRANT SELECT, INSERT ON `microlending`.`audit_log` TO `app_user`@`%`
+GRANT SELECT, INSERT, UPDATE ON `microlending`.`kyc_data` TO `app_user`@`%`
+GRANT SELECT, INSERT, UPDATE, DELETE ON `microlending`.`loan_application` TO `app_user`@`%`
+GRANT SELECT, INSERT, UPDATE, DELETE ON `microlending`.`loan` TO `app_user`@`%`
+GRANT SELECT, INSERT, UPDATE, DELETE ON `microlending`.`repayment_schedule` TO `app_user`@`%`
+GRANT SELECT, INSERT, UPDATE, DELETE ON `microlending`.`transaction_ledger` TO `app_user`@`%`
+GRANT SELECT, INSERT, UPDATE, DELETE ON `microlending`.`user` TO `app_user`@`%`
+GRANT SELECT, INSERT, UPDATE, DELETE ON `microlending`.`wallet_account` TO `app_user`@`%`
+
+
+==> Step 2.7: REVOKE INSERT on audit_log
+
+
+
+==> Step 2.8: Demonstrate REVOKE - After
+
+Query: SHOW GRANTS FOR 'app_user'@'%'
+
+Grants for app_user@%
+GRANT USAGE ON *.* TO `app_user`@`%`
+GRANT SELECT ON `microlending`.`audit_log` TO `app_user`@`%`
+GRANT SELECT, INSERT, UPDATE ON `microlending`.`kyc_data` TO `app_user`@`%`
+GRANT SELECT, INSERT, UPDATE, DELETE ON `microlending`.`loan_application` TO `app_user`@`%`
+GRANT SELECT, INSERT, UPDATE, DELETE ON `microlending`.`loan` TO `app_user`@`%`
+GRANT SELECT, INSERT, UPDATE, DELETE ON `microlending`.`repayment_schedule` TO `app_user`@`%`
+GRANT SELECT, INSERT, UPDATE, DELETE ON `microlending`.`transaction_ledger` TO `app_user`@`%`
+GRANT SELECT, INSERT, UPDATE, DELETE ON `microlending`.`user` TO `app_user`@`%`
+GRANT SELECT, INSERT, UPDATE, DELETE ON `microlending`.`wallet_account` TO `app_user`@`%`
+
+
+==> Step 2.9: Restore INSERT privilege
+
+
+
+==> Step 2.10: Privilege Restored
+
+Query: SHOW GRANTS FOR 'app_user'@'%'
+
+Grants for app_user@%
+GRANT USAGE ON *.* TO `app_user`@`%`
+GRANT SELECT, INSERT ON `microlending`.`audit_log` TO `app_user`@`%`
+GRANT SELECT, INSERT, UPDATE ON `microlending`.`kyc_data` TO `app_user`@`%`
+GRANT SELECT, INSERT, UPDATE, DELETE ON `microlending`.`loan_application` TO `app_user`@`%`
+GRANT SELECT, INSERT, UPDATE, DELETE ON `microlending`.`loan` TO `app_user`@`%`
+GRANT SELECT, INSERT, UPDATE, DELETE ON `microlending`.`repayment_schedule` TO `app_user`@`%`
+GRANT SELECT, INSERT, UPDATE, DELETE ON `microlending`.`transaction_ledger` TO `app_user`@`%`
+GRANT SELECT, INSERT, UPDATE, DELETE ON `microlending`.`user` TO `app_user`@`%`
+GRANT SELECT, INSERT, UPDATE, DELETE ON `microlending`.`wallet_account` TO `app_user`@`%`
+
+
+================================================================================
+3. STORED PROCEDURES
+================================================================================
+
+
+==> Step 3.1: List Stored Procedures
+
+Query: SHOW PROCEDURE STATUS WHERE Db = 'microlending'
+
+Db	Name	Type	Definer	Modified	Created	Security_type	Comment	character_set_client	collation_connection	Database Collation
+microlending	sp_apply_for_loan	PROCEDURE	admin@%	2025-10-30 03:38:24	2025-10-30 03:38:24	DEFINER		utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_unicode_ci
+microlending	sp_calculate_risk_score	PROCEDURE	admin@%	2025-10-30 03:38:25	2025-10-30 03:38:25	DEFINER		utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_unicode_ci
+microlending	sp_process_repayment	PROCEDURE	admin@%	2025-10-30 03:38:24	2025-10-30 03:38:24	DEFINER		utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_unicode_ci
+
+
+==> Step 3.2: sp_apply_for_loan Definition
+
+Query: SHOW CREATE PROCEDURE sp_apply_for_loan
+
+Procedure	sql_mode	Create Procedure	character_set_client	collation_connection	Database Collation
+sp_apply_for_loan	NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`admin`@`%` PROCEDURE `sp_apply_for_loan`(\n    IN p_applicant_id INT,\n    IN p_loan_amount DECIMAL(15,2),\n    IN p_purpose TEXT,\n    IN p_term_months INT\n)\nBEGIN\n    DECLARE v_credit_score INT;\n    DECLARE v_interest_rate DECIMAL(5,2);\n    \n    -- Error handling\n    DECLARE EXIT HANDLER FOR SQLEXCEPTION\n    BEGIN\n        ROLLBACK;\n        SELECT 'Error: Loan application failed' AS error_message;\n    END;\n    \n    START TRANSACTION;\n    \n    -- Get applicant's credit score\n    SELECT credit_score INTO v_credit_score\n    FROM user\n    WHERE id = p_applicant_id;\n    \n    -- Calculate interest rate based on credit score\n    SET v_interest_rate = CASE\n        WHEN v_credit_score >= 750 THEN 5.0\n        WHEN v_credit_score >= 650 THEN 8.0\n        WHEN v_credit_score >= 550 THEN 12.0\n        ELSE 15.0\n    END;\n    \n    -- Insert loan application\n    INSERT INTO loan_application (\n        applicant_id, \n        amount, \n        purpose, \n        term_months,\n        interest_rate,\n        status\n    ) VALUES (\n        p_applicant_id,\n        p_loan_amount,\n        p_purpose,\n        p_term_months,\n        v_interest_rate,\n        'pending'\n    );\n    \n    COMMIT;\n    SELECT LAST_INSERT_ID() AS application_id, \n           v_interest_rate AS suggested_interest_rate,\n           'Application submitted successfully' AS message;\nEND	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_unicode_ci
+
+
+==> Step 3.3: sp_process_repayment Definition
+
+Query: SHOW CREATE PROCEDURE sp_process_repayment
+
+Procedure	sql_mode	Create Procedure	character_set_client	collation_connection	Database Collation
+sp_process_repayment	NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`admin`@`%` PROCEDURE `sp_process_repayment`(\n    IN p_loan_id INT,\n    IN p_payment_amount DECIMAL(15,2),\n    IN p_borrower_wallet_id INT\n)\nBEGIN\n    DECLARE v_outstanding DECIMAL(15,2);\n    DECLARE v_borrower_balance DECIMAL(15,2);\n    \n    DECLARE EXIT HANDLER FOR SQLEXCEPTION\n    BEGIN\n        ROLLBACK;\n        SELECT 'Error: Repayment failed' AS error_message;\n    END;\n    \n    START TRANSACTION;\n    \n    -- Check borrower's wallet balance\n    SELECT balance INTO v_borrower_balance\n    FROM wallet_account\n    WHERE id = p_borrower_wallet_id\n    FOR UPDATE;\n    \n    IF v_borrower_balance < p_payment_amount THEN\n        SIGNAL SQLSTATE '45000'\n        SET MESSAGE_TEXT = 'Insufficient funds for repayment';\n    END IF;\n    \n    -- Get outstanding balance\n    SELECT outstanding_balance INTO v_outstanding\n    FROM loan\n    WHERE id = p_loan_id\n    FOR UPDATE;\n    \n    -- Deduct from borrower's wallet\n    UPDATE wallet_account\n    SET balance = balance - p_payment_amount\n    WHERE id = p_borrower_wallet_id;\n    \n    -- Update loan outstanding balance\n    UPDATE loan\n    SET outstanding_balance = outstanding_balance - p_payment_amount,\n        status = CASE \n            WHEN (outstanding_balance - p_payment_amount) <= 0 THEN 'paid_off'\n            ELSE status\n        END\n    WHERE id = p_loan_id;\n    \n    -- Create transaction record\n    INSERT INTO transaction_ledger (\n        from_wallet_id,\n        to_wallet_id,\n        amount,\n        transaction_type,\n        reference_id,\n        status\n    ) VALUES (\n        p_borrower_wallet_id,\n        NULL,\n        p_payment_amount,\n        'repayment',\n        p_loan_id,\n        'completed'\n    );\n    \n    COMMIT;\n    SELECT 'Repayment processed successfully' AS message, \n           (v_outstanding - p_payment_amount) AS remaining_balance;\nEND	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_unicode_ci
+
+
+==> Step 3.4: sp_calculate_risk_score Definition
+
+Query: SHOW CREATE PROCEDURE sp_calculate_risk_score
+
+Procedure	sql_mode	Create Procedure	character_set_client	collation_connection	Database Collation
+sp_calculate_risk_score	NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`admin`@`%` PROCEDURE `sp_calculate_risk_score`(\n    IN p_user_id INT,\n    IN p_loan_amount DECIMAL(15,2),\n    OUT p_risk_score DECIMAL(5,2),\n    OUT p_risk_category VARCHAR(20)\n)\nBEGIN\n    DECLARE v_credit_score INT;\n    DECLARE v_active_loans INT;\n    DECLARE v_total_borrowed DECIMAL(15,2);\n    DECLARE v_payment_history INT;\n    \n    -- Get user's credit score\n    SELECT credit_score INTO v_credit_score\n    FROM user\n    WHERE id = p_user_id;\n    \n    -- Count active loans\n    SELECT COUNT(*) INTO v_active_loans\n    FROM loan\n    WHERE borrower_id = p_user_id AND status = 'active';\n    \n    -- Total currently borrowed\n    SELECT COALESCE(SUM(outstanding_balance), 0) INTO v_total_borrowed\n    FROM loan\n    WHERE borrower_id = p_user_id AND status = 'active';\n    \n    -- Payment history (count on-time payments)\n    SELECT COUNT(*) INTO v_payment_history\n    FROM repayment_schedule\n    WHERE loan_id IN (SELECT id FROM loan WHERE borrower_id = p_user_id)\n    AND status = 'paid';\n    \n    -- Calculate risk score (0-100, higher = riskier)\n    SET p_risk_score = \n        -- Credit score factor (0-40 points)\n        (CASE\n            WHEN v_credit_score >= 750 THEN 10\n            WHEN v_credit_score >= 650 THEN 20\n            WHEN v_credit_score >= 550 THEN 30\n            ELSE 40\n        END) +\n        -- Existing loans factor (0-30 points)\n        (CASE\n            WHEN v_active_loans = 0 THEN 5\n            WHEN v_active_loans <= 2 THEN 15\n            ELSE 30\n        END) +\n        -- Debt-to-loan ratio (0-30 points)\n        (CASE\n            WHEN v_total_borrowed = 0 THEN 5\n            WHEN (v_total_borrowed / p_loan_amount) < 2 THEN 15\n            ELSE 30\n        END);\n    \n    -- Categorize risk\n    SET p_risk_category = CASE\n        WHEN p_risk_score <= 30 THEN 'Low Risk'\n        WHEN p_risk_score <= 60 THEN 'Medium Risk'\n        ELSE 'High Risk'\n    END;\nEND	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_unicode_ci
+
+
+==> Step 3.5: Test sp_apply_for_loan
+
+Query: CALL sp_apply_for_loan(1, 5000.00, 'Business expansion', 12)
+
+application_id	suggested_interest_rate	message
+18	8.00	Application submitted successfully
+
+
+==> Step 3.6: Verify Created Application
+
+Query: SELECT * FROM loan_application ORDER BY created_at DESC LIMIT 1
+
+id	applicant_id	amount	purpose	term_months	interest_rate	status	reviewed_by	reviewed_at	created_at	updated_at
+18	1	5000.00	Business expansion	12	8.00	pending	NULL	NULL	2025-10-30 18:28:58	2025-10-30 18:28:58
+
+
+================================================================================
+4. VIEWS
+================================================================================
+
+
+==> Step 4.1: List All Views
+
+Query: SHOW FULL TABLES WHERE Table_type = 'VIEW'
+
+Tables_in_microlending	Table_type
+v_active_loans	VIEW
+v_application_offers	VIEW
+v_loan_cash_flows	VIEW
+v_loan_delinquency	VIEW
+v_overdue_installments	VIEW
+v_portfolio_dashboard	VIEW
+v_thread_latest_message	VIEW
+v_user_profile_safe	VIEW
+
+
+==> Step 4.2: v_active_loans Definition
+
+Query: SHOW CREATE VIEW v_active_loans
+
+View	Create View	character_set_client	collation_connection
+v_active_loans	CREATE ALGORITHM=UNDEFINED DEFINER=`admin`@`%` SQL SECURITY DEFINER VIEW `v_active_loans` AS select `l`.`id` AS `loan_id`,`l`.`principal_amount` AS `principal_amount`,`l`.`interest_rate` AS `interest_rate`,`l`.`outstanding_balance` AS `outstanding_balance`,`l`.`status` AS `status`,`l`.`disbursed_at` AS `disbursed_at`,`l`.`maturity_date` AS `maturity_date`,`b`.`full_name` AS `borrower_name`,`b`.`email` AS `borrower_email`,`le`.`full_name` AS `lender_name` from ((`loan` `l` join `user` `b` on((`l`.`borrower_id` = `b`.`id`))) left join `user` `le` on((`l`.`lender_id` = `le`.`id`))) where (`l`.`status` = 'active')	utf8mb4	utf8mb4_0900_ai_ci
+
+
+==> Step 4.3: Query v_active_loans (Simple View)
+
+Query: SELECT * FROM v_active_loans LIMIT 3
+
+loan_id	principal_amount	interest_rate	outstanding_balance	status	disbursed_at	maturity_date	borrower_name	borrower_email	lender_name
+1	5000.00	8.50	4500.00	active	2024-01-16 14:00:00	2025-01-16	John Doe	john.doe@email.com	Bob Johnson
+2	10000.00	7.20	9200.00	active	2024-01-21 15:00:00	2026-01-21	Jane Smith	jane.smith@email.com	Alice Williams
+
+
+==> Step 4.4: v_portfolio_dashboard Definition
+
+Query: SHOW CREATE VIEW v_portfolio_dashboard
+
+View	Create View	character_set_client	collation_connection
+v_portfolio_dashboard	CREATE ALGORITHM=UNDEFINED DEFINER=`admin`@`%` SQL SECURITY DEFINER VIEW `v_portfolio_dashboard` AS select `u`.`id` AS `user_id`,`u`.`full_name` AS `full_name`,`u`.`email` AS `email`,`u`.`role` AS `role`,`u`.`credit_score` AS `credit_score`,`w`.`balance` AS `wallet_balance`,coalesce(`lender_stats`.`loans_funded`,0) AS `loans_funded`,coalesce(`lender_stats`.`total_funded`,0) AS `total_amount_lent`,coalesce(`lender_stats`.`active_investments`,0) AS `active_investments`,coalesce(`lender_stats`.`total_outstanding`,0) AS `outstanding_receivables`,coalesce(`borrower_stats`.`loans_taken`,0) AS `loans_taken`,coalesce(`borrower_stats`.`total_borrowed`,0) AS `total_amount_borrowed`,coalesce(`borrower_stats`.`active_loans`,0) AS `active_loans`,coalesce(`borrower_stats`.`total_owed`,0) AS `total_amount_owed`,(case when (`u`.`role` = 'lender') then round(((coalesce(`lender_stats`.`total_outstanding`,0) / nullif(coalesce(`lender_stats`.`total_funded`,0),0)) * 100),2) else NULL end) AS `portfolio_at_risk_pct`,(case when (`u`.`role` = 'borrower') then round(((coalesce(`borrower_stats`.`total_owed`,0) / nullif(`w`.`balance`,0)) * 100),2) else NULL end) AS `debt_to_wallet_ratio` from (((`user` `u` left join `wallet_account` `w` on((`u`.`id` = `w`.`user_id`))) left join (select `loan`.`lender_id` AS `lender_id`,count(0) AS `loans_funded`,sum(`loan`.`principal_amount`) AS `total_funded`,sum((case when (`loan`.`status` = 'active') then 1 else 0 end)) AS `active_investments`,sum((case when (`loan`.`status` = 'active') then `loan`.`outstanding_balance` else 0 end)) AS `total_outstanding` from `loan` where (`loan`.`lender_id` is not null) group by `loan`.`lender_id`) `lender_stats` on((`u`.`id` = `lender_stats`.`lender_id`))) left join (select `loan`.`borrower_id` AS `borrower_id`,count(0) AS `loans_taken`,sum(`loan`.`principal_amount`) AS `total_borrowed`,sum((case when (`loan`.`status` = 'active') then 1 else 0 end)) AS `active_loans`,sum((case when (`loan`.`status` = 'active') then `loan`.`outstanding_balance` else 0 end)) AS `total_owed` from `loan` group by `loan`.`borrower_id`) `borrower_stats` on((`u`.`id` = `borrower_stats`.`borrower_id`)))	utf8mb4	utf8mb4_0900_ai_ci
+
+
+==> Step 4.5: Query v_portfolio_dashboard (Complex View)
+
+Query: SELECT user_id, full_name, role, wallet_balance, active_loans, total_amount_owed FROM v_portfolio_dashboard LIMIT 3
+
+user_id	full_name	role	wallet_balance	active_loans	total_amount_owed
+1	John Doe	borrower	500.00	1	4500.00
+2	Jane Smith	borrower	1200.00	1	9200.00
+3	Mike Brown	borrower	0.00	0	0.00
+
+
+==> Step 4.6: v_user_profile_safe Definition
+
+Query: SHOW CREATE VIEW v_user_profile_safe
+
+View	Create View	character_set_client	collation_connection
+v_user_profile_safe	CREATE ALGORITHM=UNDEFINED DEFINER=`admin`@`%` SQL SECURITY DEFINER VIEW `v_user_profile_safe` AS select `user`.`id` AS `id`,`user`.`email` AS `email`,`user`.`full_name` AS `full_name`,`user`.`role` AS `role`,`user`.`phone` AS `phone`,left(`user`.`address`,20) AS `address_preview`,(case when (`user`.`credit_score` >= 750) then 'Excellent' when (`user`.`credit_score` >= 650) then 'Good' when (`user`.`credit_score` >= 550) then 'Fair' else 'Poor' end) AS `credit_rating`,`user`.`is_active` AS `is_active`,`user`.`created_at` AS `created_at` from `user`	utf8mb4	utf8mb4_0900_ai_ci
+
+
+==> Step 4.7: Query v_user_profile_safe (Security View)
+
+Query: SELECT * FROM v_user_profile_safe LIMIT 3
+
+id	email	full_name	role	phone	address_preview	credit_rating	is_active	created_at
+1	john.doe@email.com	John Doe	borrower	+1-555-0101	123 Main St, New Yor	Good	1	2024-01-15 10:00:00
+2	jane.smith@email.com	Jane Smith	borrower	+1-555-0102	456 Oak Ave, Los Ang	Good	1	2024-01-20 11:30:00
+3	mike.brown@email.com	Mike Brown	borrower	+1-555-0103	789 Pine Rd, Chicago	Good	1	2024-02-01 09:15:00
+
+
+================================================================================
+5. QUERY PERFORMANCE WITH EXPLAIN
+================================================================================
+
+
+==> Step 5.1: EXPLAIN Indexed Query
+
+Query: EXPLAIN SELECT * FROM user WHERE email = 'john.doe@email.com'
+
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	user	NULL	const	email,idx_user_email	email	1022	const	1	100.00	NULL
+
+
+==> Step 5.2: EXPLAIN Role Query
+
+Query: EXPLAIN SELECT * FROM user WHERE role = 'borrower'
+
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	user	NULL	ref	idx_user_role	idx_user_role	203	const	7	100.00	NULL
+
+
+==> Step 5.3: EXPLAIN JOIN Query
+
+Query: EXPLAIN SELECT u.full_name, w.balance FROM user u JOIN wallet_account w ON u.id = w.user_id WHERE u.role = 'lender'
+
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	u	NULL	ref	PRIMARY,idx_user_role	idx_user_role	203	const	2	100.00	NULL
+1	SIMPLE	w	NULL	ref	idx_wallet_user	idx_wallet_user	4	microlending.u.id	1	100.00	NULL
+
+
+==> Step 5.4: EXPLAIN Complex Query with ORDER BY
+
+Query: EXPLAIN SELECT u.full_name, l.principal_amount, l.status, l.created_at FROM user u JOIN loan l ON u.id = l.borrower_id WHERE l.status = 'active' ORDER BY l.created_at DESC LIMIT 10
+
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	l	NULL	ref	idx_loan_borrower,idx_loan_status	idx_loan_status	83	const	2	100.00	Using filesort
+1	SIMPLE	u	NULL	eq_ref	PRIMARY	PRIMARY	4	microlending.l.borrower_id	1	100.00	NULL
+
+
+================================================================================
+6. DATA INITIALIZATION STRATEGY
+================================================================================
+
+
+==> Step 6.1: Total Users
+
+Query: SELECT COUNT(*) as total_users FROM user
+
+total_users
+10
+
+
+==> Step 6.2: Users by Role
+
+Query: SELECT role, COUNT(*) as count FROM user GROUP BY role ORDER BY count DESC
+
+role	count
+borrower	7
+lender	2
+admin	1
+
+
+==> Step 6.3: Total Wallets
+
+Query: SELECT COUNT(*) as total_wallets FROM wallet_account
+
+total_wallets
+6
+
+
+==> Step 6.4: Total Loans
+
+Query: SELECT COUNT(*) as total_loans FROM loan
+
+total_loans
+2
+
+
+==> Step 6.5: Sample User Data
+
+Query: SELECT id, email, full_name, role, credit_score FROM user ORDER BY created_at DESC LIMIT 5
+
+id	email	full_name	role	credit_score
+22	borrower1@microlend.com	Duplicate	borrower	NULL
+9	rollback_test@microlend.com	Rollback Test	borrower	NULL
+8	verify.test@email.com	Verify Test	borrower	700
+7	trigger.test@email.com	Trigger Test	borrower	700
+3	mike.brown@email.com	Mike Brown	borrower	650
+
+
+==> Step 6.6: Wallet Balance Distribution
+
+Query: SELECT CASE WHEN balance < 1000 THEN 'Low (< $1000)' WHEN balance < 5000 THEN 'Medium ($1000-$5000)' ELSE 'High (> $5000)' END as balance_range, COUNT(*) as count FROM wallet_account GROUP BY balance_range
+
+balance_range	count
+Low (< $1000)	2
+Medium ($1000-$5000)	2
+High (> $5000)	2
+
+
+================================================================================
+7. AUDIT STRATEGY
+================================================================================
+
+
+==> Step 7.1: Audit Log Structure
+
+Query: DESCRIBE audit_log
+
+Field	Type	Null	Key	Default	Extra
+id	int	NO	PRI	NULL	auto_increment
+user_id	int	YES	MUL	NULL	
+action	varchar(100)	NO		NULL	
+table_name	varchar(50)	YES	MUL	NULL	
+record_id	int	YES		NULL	
+old_values	text	YES		NULL	
+new_values	text	YES		NULL	
+ip_address	varchar(45)	YES		NULL	
+user_agent	text	YES		NULL	
+created_at	datetime	YES	MUL	CURRENT_TIMESTAMP	DEFAULT_GENERATED
+
+
+==> Step 7.2: List Triggers
+
+Query: SHOW TRIGGERS
+
+Trigger	Event	Table	Statement	Timing	Created	sql_mode	Definer	character_set_client	collation_connection	Database Collation
+trg_loan_after_update	UPDATE	loan	BEGIN\n    IF OLD.status != NEW.status OR OLD.outstanding_balance != NEW.outstanding_balance THEN\n        INSERT INTO audit_log (\n            table_name,\n            record_id,\n            action,\n            user_id,\n            old_values,\n            new_values\n        ) VALUES (\n            'loan',\n            NEW.id,\n            'UPDATE',\n            NEW.borrower_id,\n            JSON_OBJECT(\n                'status', OLD.status,\n                'outstanding_balance', OLD.outstanding_balance\n            ),\n            JSON_OBJECT(\n                'status', NEW.status,\n                'outstanding_balance', NEW.outstanding_balance\n            )\n        );\n    END IF;\nEND	AFTER	2025-10-30 03:38:25.43	NO_ENGINE_SUBSTITUTION	admin@%	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_unicode_ci
+trg_user_before_insert	INSERT	user	BEGIN\n    -- Validate email format\n    IF NEW.email NOT LIKE '%_@__%.__%' THEN\n        SIGNAL SQLSTATE '45000'\n        SET MESSAGE_TEXT = 'Invalid email format';\n    END IF;\n    \n    -- Validate credit score range\n    IF NEW.credit_score IS NOT NULL AND (NEW.credit_score < 300 OR NEW.credit_score > 850) THEN\n        SIGNAL SQLSTATE '45000'\n        SET MESSAGE_TEXT = 'Credit score must be between 300 and 850';\n    END IF;\n    \n    -- Normalize email to lowercase\n    SET NEW.email = LOWER(NEW.email);\n    \n    -- Normalize role\n    SET NEW.role = LOWER(NEW.role);\nEND	BEFORE	2025-10-30 03:38:25.35	NO_ENGINE_SUBSTITUTION	admin@%	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_unicode_ci
+trg_user_after_insert	INSERT	user	BEGIN\n    INSERT INTO audit_log (\n        table_name,\n        record_id,\n        action,\n        user_id,\n        new_values\n    ) VALUES (\n        'user',\n        NEW.id,\n        'INSERT',\n        NEW.id,\n        JSON_OBJECT(\n            'email', NEW.email,\n            'full_name', NEW.full_name,\n            'role', NEW.role,\n            'credit_score', NEW.credit_score\n        )\n    );\nEND	AFTER	2025-10-30 03:38:25.39	NO_ENGINE_SUBSTITUTION	admin@%	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_unicode_ci
+trg_wallet_after_update	UPDATE	wallet_account	BEGIN\n    IF OLD.balance != NEW.balance THEN\n        INSERT INTO audit_log (\n            table_name,\n            record_id,\n            action,\n            user_id,\n            old_values,\n            new_values\n        ) VALUES (\n            'wallet_account',\n            NEW.id,\n            'UPDATE',\n            NEW.user_id,\n            JSON_OBJECT('balance', OLD.balance),\n            JSON_OBJECT('balance', NEW.balance)\n        );\n    END IF;\nEND	AFTER	2025-10-30 03:38:25.47	NO_ENGINE_SUBSTITUTION	admin@%	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_unicode_ci
+
+
+==> Step 7.3: Recent Audit Entries
+
+Query: SELECT table_name, action, record_id, created_at FROM audit_log ORDER BY created_at DESC LIMIT 5
+
+table_name	action	record_id	created_at
+user	INSERT	37	2025-10-30 18:24:20
+user	INSERT	33	2025-10-30 17:58:03
+user	INSERT	29	2025-10-30 16:45:51
+user	INSERT	25	2025-10-30 16:29:22
+user	INSERT	22	2025-10-30 16:20:16
+
+
+==> Step 7.4: Audit Entries by Action Type
+
+Query: SELECT action, COUNT(*) as count FROM audit_log GROUP BY action ORDER BY count DESC
+
+action	count
+INSERT	14
+user_created	5
+loan_approved	5
+loan_disbursed	5
+
+
+================================================================================
+8. CASCADING DELETES
+================================================================================
+
+
+==> Step 8.1: Foreign Key DELETE Rules
+
+Query: SELECT TABLE_NAME, CONSTRAINT_NAME, DELETE_RULE FROM INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = 'microlending' ORDER BY DELETE_RULE, TABLE_NAME
+
+TABLE_NAME	CONSTRAINT_NAME	DELETE_RULE
+loan	loan_ibfk_2	RESTRICT
+loan_application	loan_application_ibfk_1	RESTRICT
+kyc_data	kyc_data_ibfk_1	CASCADE
+repayment_schedule	repayment_schedule_ibfk_1	CASCADE
+transaction_ledger	transaction_ledger_ibfk_1	CASCADE
+wallet_account	wallet_account_ibfk_1	CASCADE
+audit_log	audit_log_ibfk_1	SET NULL
+kyc_data	kyc_data_ibfk_2	SET NULL
+loan	loan_ibfk_1	SET NULL
+loan	loan_ibfk_3	SET NULL
+loan_application	loan_application_ibfk_2	SET NULL
+transaction_ledger	transaction_ledger_ibfk_2	SET NULL
+
+
+==> Step 8.2: CASCADE Examples
+
+Query: SELECT kcu.TABLE_NAME, kcu.COLUMN_NAME, kcu.REFERENCED_TABLE_NAME, kcu.REFERENCED_COLUMN_NAME, rc.DELETE_RULE FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc ON kcu.CONSTRAINT_NAME = rc.CONSTRAINT_NAME WHERE kcu.TABLE_SCHEMA = 'microlending' AND rc.DELETE_RULE = 'CASCADE'
+
+TABLE_NAME	COLUMN_NAME	REFERENCED_TABLE_NAME	REFERENCED_COLUMN_NAME	DELETE_RULE
+wallet_account	user_id	user	id	CASCADE
+kyc_data	user_id	user	id	CASCADE
+transaction_ledger	wallet_id	wallet_account	id	CASCADE
+repayment_schedule	loan_id	loan	id	CASCADE
+
+
+CASCADE DELETE Test:
+
+status
+Step 8.3: Create test user with wallet
+status
+Step 8.4: Verify wallet created
+wallet_count
+1
+status
+Step 8.5: Delete user (wallet should CASCADE)
+status
+Step 8.6: Verify wallet CASCADE deleted (should be 0)
+wallet_count
+0
+
+================================================================================
+9. TRANSACTION MANAGEMENT AND ROLLBACK
+================================================================================
+
+
+ROLLBACK Demonstration:
+
+status
+BEFORE INSERT - Checking if rollback_test exists:
+count
+0
+status
+AFTER INSERT - User exists in transaction:
+count
+1
+status
+AFTER ROLLBACK - User should NOT exist:
+count
+0
+
+COMMIT Demonstration:
+
+status
+BEFORE INSERT - Checking if commit_test exists:
+count
+0
+status
+AFTER INSERT - User exists in transaction:
+count
+1
+status
+AFTER COMMIT - User persisted permanently:
+id	email	full_name
+41	commit_test@test.com	Commit Test User
+
+================================================================================
+10. CONSTRAINTS AND TRIGGERS
+================================================================================
+
+
+==> Step 10.1: CHECK Constraints
+
+Query: SELECT TABLE_NAME, CONSTRAINT_NAME FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS WHERE TABLE_SCHEMA = 'microlending' AND CONSTRAINT_TYPE = 'CHECK' ORDER BY TABLE_NAME
+
+TABLE_NAME	CONSTRAINT_NAME
+kyc_data	chk_kyc_status
+loan	chk_loan_interest_rate
+loan	chk_loan_status
+loan	chk_loan_term
+loan	chk_outstanding_balance
+loan	chk_principal_positive
+loan_application	chk_term_months
+loan_application	chk_loan_amount
+loan_application	chk_interest_rate
+loan_application	chk_app_status
+repayment_schedule	chk_interest_nonnegative
+repayment_schedule	chk_paid_amount_nonnegative
+repayment_schedule	chk_principal_nonnegative
+repayment_schedule	chk_repay_status
+transaction_ledger	chk_trans_type
+user	chk_credit_score
+user	chk_role
+wallet_account	chk_balance_positive
+wallet_account	chk_wallet_status
+
+
+==> Step 10.2: UNIQUE Constraints
+
+Query: SELECT TABLE_NAME, CONSTRAINT_NAME FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS WHERE TABLE_SCHEMA = 'microlending' AND CONSTRAINT_TYPE = 'UNIQUE' ORDER BY TABLE_NAME
+
+TABLE_NAME	CONSTRAINT_NAME
+transaction_ledger	reference_number
+user	email
+wallet_account	account_number
+
+
+==> Step 10.3: NOT NULL Constraints
+
+Query: SELECT TABLE_NAME, COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'microlending' AND TABLE_NAME = 'user' AND IS_NULLABLE = 'NO' ORDER BY ORDINAL_POSITION
+
+TABLE_NAME	COLUMN_NAME
+user	id
+user	email
+user	password_hash
+
+
+Constraint Violation Tests:
+
+status
+Step 10.4: Test UNIQUE constraint violation (should FAIL)
+ERROR 1062 (23000) at line 2: Duplicate entry 'borrower1@microlend.com' for key 'user.email'
+
+================================================================================
+11. ADDITIONAL DATABASE ELEMENTS
+================================================================================
+
+
+==> Step 11.1: Data Types in USER Table
+
+Query: SELECT COLUMN_NAME, DATA_TYPE, COLUMN_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'microlending' AND TABLE_NAME = 'user' ORDER BY ORDINAL_POSITION
+
+COLUMN_NAME	DATA_TYPE	COLUMN_TYPE
+id	int	int
+email	varchar	varchar(255)
+password_hash	varchar	varchar(255)
+full_name	varchar	varchar(255)
+role	varchar	varchar(50)
+phone	varchar	varchar(20)
+address	text	text
+credit_score	int	int
+is_active	tinyint	tinyint(1)
+created_at	datetime	datetime
+updated_at	datetime	datetime
+
+
+==> Step 11.2: Database Size
+
+Query: SELECT ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) AS size_mb FROM information_schema.tables WHERE table_schema = 'microlending'
+
+size_mb
+0.59
+
+
+==> Step 11.3: Table Statistics
+
+Query: SELECT TABLE_NAME, TABLE_ROWS as row_count, ENGINE FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'microlending' AND TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_NAME
+
+TABLE_NAME	row_count	ENGINE
+audit_log	19	InnoDB
+kyc_data	3	InnoDB
+loan	2	InnoDB
+loan_application	6	InnoDB
+repayment_schedule	25	InnoDB
+transaction_ledger	5	InnoDB
+user	9	InnoDB
+wallet_account	6	InnoDB
+
+
+==> Step 11.4: Decimal Precision in LOAN Table
+
+Query: SELECT COLUMN_NAME, NUMERIC_PRECISION, NUMERIC_SCALE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'microlending' AND TABLE_NAME = 'loan' AND DATA_TYPE = 'decimal'
+
+COLUMN_NAME	NUMERIC_PRECISION	NUMERIC_SCALE
+interest_rate	5	2
+monthly_payment	15	2
+outstanding_balance	15	2
+principal_amount	15	2
+
+
+==> Step 11.5: Referential Integrity Check
+
+Query: SELECT (SELECT COUNT(*) FROM wallet_account) as total_wallets, (SELECT COUNT(*) FROM wallet_account w WHERE EXISTS (SELECT 1 FROM user u WHERE u.id = w.user_id)) as wallets_with_valid_users
+
+total_wallets	wallets_with_valid_users
+6	6
+
+
+==> Step 11.6: Normalization Check - No Duplicate Data
+
+Query: SELECT email, COUNT(*) as duplicates FROM user GROUP BY email HAVING COUNT(*) > 1
+
+
+
+==> Step 11.7: MySQL Version
+
+Query: SELECT VERSION() as mysql_version
+
+mysql_version
+8.0.42
+
+
+================================================================================
+
+End of midterm demonstration.
+
+All requirements have been executed and results displayed above.
+
+================================================================================
+

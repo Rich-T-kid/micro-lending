@@ -16,10 +16,6 @@ build/
 .env
 .env.local
 
-# Logs
-*.log
-MIDTERM_*.log
-*.log.*
 
 # Midterm demonstration files (temporary)
 MANUAL_COMMANDS.txt
