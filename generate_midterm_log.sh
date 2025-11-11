@@ -341,3 +341,56 @@ EOF
 echo ""
 echo "Log file generated: $OUTPUT_FILE"
 echo ""
+
+#TODO
+# (2) User Groups and Access Control — Show role → user assignment + denied permission example.
+# GRANT db_admin TO admin_user;
+# GRANT app_user TO app_backend;
+# GRANT read_only_analyst TO analyst_user;
+# -- Verify privileges
+# SET ROLE read_only_analyst;
+# INSERT INTO user (email, name, role_id) VALUES ('fail@test.com','FailUser',2);
+# -- Expect: ERROR: permission denied for table user
+# RESET ROLE;
+
+# (3) Stored Procedures — Execute sp_process_repayment + sp_calculate_risk_score.
+# CALL sp_process_repayment(loan_id := 1, amount := 100.00, repaid_by := 2);
+# SELECT loan_id, balance, status FROM loan WHERE loan_id = 1;
+# CALL sp_calculate_risk_score(2, @risk_score, @risk_category);
+# SELECT @risk_score AS risk_score, @risk_category AS category;
+
+# (5) Query Performance with EXPLAIN — Add before/after EXPLAIN comparison + commentary.
+# EXPLAIN SELECT * FROM user WHERE email = 'bob@example.com';
+# -- Observe: Sequential Scan (no index used)
+# CREATE INDEX idx_user_email ON user(email);
+# EXPLAIN SELECT * FROM user WHERE email = 'bob@example.com';
+# -- Observe: Index Scan using idx_user_email, cost reduced, rows=1.
+
+# (6) Data Initialization Strategy — Increase data volume for key tables or explicitly justify & document.
+# -- Optional bulk insert to reach 100+ rows
+# INSERT INTO user (email, name, role_id)
+# SELECT CONCAT('user', g.i, '@demo.com'), CONCAT('User', g.i), 2
+# FROM generate_series(1,100) AS g(i);
+
+# (7) Audit Strategy — Add explicit audit queries answering human questions.
+# -- Who modified record 10 and when?
+# SELECT user_name, operation, changed_at
+# FROM audit_log WHERE record_id = 10 ORDER BY changed_at DESC LIMIT 1;
+# -- What was the previous value before last update?
+# SELECT old_values FROM audit_log
+# WHERE record_id = 10 AND operation = 'UPDATE'
+# ORDER BY changed_at DESC LIMIT 1;
+# -- All changes to table loan in the last week
+# SELECT * FROM audit_log
+# WHERE table_name = 'loan' AND changed_at >= NOW() - INTERVAL 7 DAY;
+
+# (8) Cascading Deletes — Show one RESTRICT delete failure.
+# -- Expect error: cannot delete parent due to child FK constraint
+# DELETE FROM user WHERE id = 2;
+
+# (11) Additional Database Elements — Add backup strategy & normalization blurb (for PDF write-up).
+# -- Backup Strategy:
+# -- Use nightly mysqldump of core schema and weekly RDS snapshot for disaster recovery.
+# -- Normalization:
+# -- Database is in 3NF: each table represents one entity type, with FKs enforcing relationships.
+# -- Denormalization only used in v_portfolio_dashboard view for analytics efficiency.
