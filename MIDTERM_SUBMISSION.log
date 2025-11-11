@@ -4,7 +4,7 @@ Micro-Lending Platform Database
 ================================================================================
 
 Student: Saksham Mehta , Jose Lamela , Richard Baah
-Date: October 30, 2025
+Date: November 10, 2025
 Database: MySQL 8.0.42 on AWS RDS
 Project: Micro-Lending Platform
 
@@ -365,7 +365,7 @@ Stored Procedure Execution Examples:
 Query: CALL sp_apply_for_loan(1, 5000.00, 'Business expansion', 12)
 
 application_id	suggested_interest_rate	message
-23	8.00	Application submitted successfully
+24	8.00	Application submitted successfully
 
 
 ==> Step 3.6: Verify Created Application
@@ -373,7 +373,7 @@ application_id	suggested_interest_rate	message
 Query: SELECT id, applicant_id, amount, purpose, term_months, interest_rate, status FROM loan_application ORDER BY created_at DESC LIMIT 1
 
 id	applicant_id	amount	purpose	term_months	interest_rate	status
-23	1	5000.00	Business expansion	12	8.00	pending
+24	1	5000.00	Business expansion	12	8.00	pending
 
 status
 ==> Step 3.7: Execute sp_calculate_risk_score with OUT parameters
@@ -616,11 +616,11 @@ trg_wallet_after_update	UPDATE	wallet_account	BEGIN\n    IF OLD.balance != NEW.b
 Query: SELECT table_name, action, record_id, created_at FROM audit_log ORDER BY created_at DESC LIMIT 5
 
 table_name	action	record_id	created_at
+user	INSERT	66	2025-11-11 04:25:06
 user	INSERT	61	2025-11-11 04:12:15
 user	INSERT	57	2025-11-01 00:51:03
 user	INSERT	53	2025-11-01 00:30:13
 user	INSERT	49	2025-11-01 00:26:38
-user	INSERT	48	2025-11-01 00:21:39
 
 
 ==> Step 7.4: Audit Entries by Action Type
@@ -628,7 +628,7 @@ user	INSERT	48	2025-11-01 00:21:39
 Query: SELECT action, COUNT(*) as count FROM audit_log GROUP BY action ORDER BY count DESC
 
 action	count
-INSERT	21
+INSERT	22
 user_created	5
 loan_approved	5
 loan_disbursed	5
@@ -774,13 +774,13 @@ status
 status
 ==> Step 3: Verify data before COMMIT
 id	email	full_name	balance
-66	commit_test@test.com	Commit Test User	500.00
+71	commit_test@test.com	Commit Test User	500.00
 status
 ==> COMMIT - Transaction successful, changes persisted
 status
 ==> Step 4: Verify data persisted after COMMIT
 id	email	full_name	balance
-66	commit_test@test.com	Commit Test User	500.00
+71	commit_test@test.com	Commit Test User	500.00
 
 TEST 6: Stored Procedure Error Handling
 ----------------------------------------

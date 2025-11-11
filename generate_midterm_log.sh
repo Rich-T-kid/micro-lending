@@ -30,7 +30,7 @@ Micro-Lending Platform Database
 ================================================================================
 
 Student: Saksham Mehta , Jose Lamela , Richard Baah
-Date: October 30, 2025
+Date: November 10, 2025
 Database: MySQL 8.0.42 on AWS RDS
 Project: Micro-Lending Platform
 
