@@ -365,7 +365,7 @@ Stored Procedure Execution Examples:
 Query: CALL sp_apply_for_loan(1, 5000.00, 'Business expansion', 12)
 
 application_id	suggested_interest_rate	message
-24	8.00	Application submitted successfully
+27	8.00	Application submitted successfully
 
 
 ==> Step 3.6: Verify Created Application
@@ -373,7 +373,7 @@ application_id	suggested_interest_rate	message
 Query: SELECT id, applicant_id, amount, purpose, term_months, interest_rate, status FROM loan_application ORDER BY created_at DESC LIMIT 1
 
 id	applicant_id	amount	purpose	term_months	interest_rate	status
-24	1	5000.00	Business expansion	12	8.00	pending
+27	1	5000.00	Business expansion	12	8.00	pending
 
 status
 ==> Step 3.7: Execute sp_calculate_risk_score with OUT parameters
@@ -430,7 +430,7 @@ v_portfolio_dashboard	CREATE ALGORITHM=UNDEFINED DEFINER=`admin`@`%` SQL SECURIT
 Query: SELECT user_id, full_name, role, wallet_balance, active_loans, total_amount_owed FROM v_portfolio_dashboard LIMIT 3
 
 user_id	full_name	role	wallet_balance	active_loans	total_amount_owed
-1	John Doe	borrower	500.00	1	4500.00
+1	John Doe	borrower	501.00	1	4500.00
 2	Jane Smith	borrower	1200.00	1	9200.00
 3	Mike Brown	borrower	0.00	0	0.00
 
@@ -458,16 +458,17 @@ id	email	full_name	role	phone	address_preview	credit_rating	is_active	created_at
 ================================================================================
 
 
-==> Step 5.1: EXPLAIN - Email lookup using UNIQUE index
+==> Step 5.1: EXPLAIN ANALYZE - Email lookup using UNIQUE index
 
-Query: EXPLAIN SELECT * FROM user WHERE email = 'john.doe@email.com'
+Query: EXPLAIN ANALYZE SELECT * FROM user WHERE email = 'john.doe@email.com'
 
-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	user	NULL	const	email,idx_user_email	email	1022	const	1	100.00	NULL
+EXPLAIN
+-> Rows fetched before execution  (cost=0..0 rows=1) (actual time=98e-6..139e-6 rows=1 loops=1)\n
 
 Analysis: Uses 'const' access type with 'email' UNIQUE index - most efficient lookup
 Expected rows: 1, Filtered: 100%
 Cost: Very low, direct index lookup
+Actual execution shows constant-time lookup with minimal rows examined
 
 
 ==> Step 5.2: EXPLAIN - Role query using non-unique index
@@ -497,13 +498,12 @@ Analysis:
 - No filesort or temp table needed
 
 
-==> Step 5.4: EXPLAIN - Complex query with JOIN and ORDER BY
+==> Step 5.4: EXPLAIN ANALYZE - Complex query with JOIN and ORDER BY
 
-Query: EXPLAIN SELECT u.full_name, l.principal_amount, l.status, l.created_at FROM user u JOIN loan l ON u.id = l.borrower_id WHERE l.status = 'active' ORDER BY l.created_at DESC LIMIT 10
+Query: EXPLAIN ANALYZE SELECT u.full_name, l.principal_amount, l.status, l.created_at FROM user u JOIN loan l ON u.id = l.borrower_id WHERE l.status = 'active' ORDER BY l.created_at DESC LIMIT 10
 
-id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	l	NULL	ref	idx_loan_borrower,idx_loan_status	idx_loan_status	83	const	2	100.00	Using filesort
-1	SIMPLE	u	NULL	eq_ref	PRIMARY	PRIMARY	4	microlending.l.borrower_id	1	100.00	NULL
+EXPLAIN
+-> Limit: 10 row(s)  (cost=1.4 rows=2) (actual time=0.0544..0.0568 rows=2 loops=1)\n    -> Nested loop inner join  (cost=1.4 rows=2) (actual time=0.0538..0.0559 rows=2 loops=1)\n        -> Sort: l.created_at DESC  (cost=0.7 rows=2) (actual time=0.0453..0.0455 rows=2 loops=1)\n            -> Index lookup on l using idx_loan_status (status='active')  (cost=0.7 rows=2) (actual time=0.0264..0.0286 rows=2 loops=1)\n        -> Single-row index lookup on u using PRIMARY (id=l.borrower_id)  (cost=0.3 rows=1) (actual time=0.00429..0.00434 rows=1 loops=2)\n
 
 Analysis:
 - Loan table filtered by 'idx_loan_status' index (WHERE status = 'active')
@@ -616,11 +616,11 @@ trg_wallet_after_update	UPDATE	wallet_account	BEGIN\n    IF OLD.balance != NEW.b
 Query: SELECT table_name, action, record_id, created_at FROM audit_log ORDER BY created_at DESC LIMIT 5
 
 table_name	action	record_id	created_at
+user	INSERT	81	2025-11-11 04:51:24
+wallet_account	UPDATE	1	2025-11-11 04:51:22
+user	INSERT	76	2025-11-11 04:42:25
+user	INSERT	71	2025-11-11 04:36:09
 user	INSERT	66	2025-11-11 04:25:06
-user	INSERT	61	2025-11-11 04:12:15
-user	INSERT	57	2025-11-01 00:51:03
-user	INSERT	53	2025-11-01 00:30:13
-user	INSERT	49	2025-11-01 00:26:38
 
 
 ==> Step 7.4: Audit Entries by Action Type
@@ -628,10 +628,11 @@ user	INSERT	49	2025-11-01 00:26:38
 Query: SELECT action, COUNT(*) as count FROM audit_log GROUP BY action ORDER BY count DESC
 
 action	count
-INSERT	22
+INSERT	25
 user_created	5
 loan_approved	5
 loan_disbursed	5
+UPDATE	1
 
 
 Audit Query Examples:
@@ -669,7 +670,18 @@ loan_disbursed	1	1	2024-01-16 14:05:00
 
 Query: SELECT old_values, new_values, created_at FROM audit_log WHERE table_name = 'wallet_account' AND action = 'UPDATE' ORDER BY created_at DESC LIMIT 3
 
+old_values	new_values	created_at
+{"balance": 500.00}	{"balance": 501.00}	2025-11-11 04:51:22
 
+
+Demonstrate UPDATE Trigger Creating Audit Entry:
+-------------------------------------------------
+status
+==> Make a small balance change to trigger trg_wallet_after_update
+status
+==> Prove it hit the audit table
+table_name	action	record_id	old_values	new_values	created_at
+wallet_account	UPDATE	1	{"balance": 501.00}	{"balance": 502.00}	2025-11-11 04:54:34
 
 ================================================================================
 8. CASCADING DELETES AND RESTRICT RULES
@@ -723,8 +735,10 @@ wallet_count_after
 
 TEST 2: RESTRICT DELETE - Cannot delete borrower with active loan
 ------------------------------------------------------------------
+mysql: [Warning] Using a password on the command line interface can be insecure.
 status
 ==> Attempting to delete user with active loan (should fail with FK RESTRICT):
+ERROR 1451 (23000) at line 4: Cannot delete or update a parent row: a foreign key constraint fails (`microlending`.`loan_application`, CONSTRAINT `loan_application_ibfk_1` FOREIGN KEY (`applicant_id`) REFERENCES `user` (`id`) ON DELETE RESTRICT)
 
 ================================================================================
 9. TRANSACTION MANAGEMENT AND ROLLBACK WITH ERROR HANDLING
@@ -752,18 +766,24 @@ count
 
 TEST 2: ROLLBACK on Duplicate Key Error (Error Code 1062)
 ----------------------------------------------------------
+mysql: [Warning] Using a password on the command line interface can be insecure.
 status
 ==> Attempting to insert duplicate email (should fail with ERROR 1062):
+ERROR 1062 (23000) at line 5: Duplicate entry 'john.doe@email.com' for key 'user.email'
 
 TEST 3: ROLLBACK on CHECK Constraint Violation (Error Code 3819)
 -----------------------------------------------------------------
+mysql: [Warning] Using a password on the command line interface can be insecure.
 status
 ==> Attempting to insert invalid credit score (should fail CHECK constraint):
+ERROR 1644 (45000) at line 5: Credit score must be between 300 and 850
 
 TEST 4: ROLLBACK on Foreign Key Constraint (Error Code 1452)
 -------------------------------------------------------------
+mysql: [Warning] Using a password on the command line interface can be insecure.
 status
 ==> Attempting to insert wallet for non-existent user (should fail FK constraint):
+ERROR 1452 (23000) at line 5: Cannot add or update a child row: a foreign key constraint fails (`microlending`.`wallet_account`, CONSTRAINT `wallet_account_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE CASCADE)
 
 TEST 5: SUCCESSFUL COMMIT - Multi-Statement Transaction
 --------------------------------------------------------
@@ -774,13 +794,13 @@ status
 status
 ==> Step 3: Verify data before COMMIT
 id	email	full_name	balance
-71	commit_test@test.com	Commit Test User	500.00
+86	commit_test@test.com	Commit Test User	500.00
 status
 ==> COMMIT - Transaction successful, changes persisted
 status
 ==> Step 4: Verify data persisted after COMMIT
 id	email	full_name	balance
-71	commit_test@test.com	Commit Test User	500.00
+86	commit_test@test.com	Commit Test User	500.00
 
 TEST 6: Stored Procedure Error Handling
 ----------------------------------------
@@ -869,11 +889,24 @@ created_at	datetime	datetime
 updated_at	datetime	datetime
 
 
-==> Step 11.2: ENUM-like Constraints (CHECK constraints used instead of ENUM)
+==> Step 11.2: ENUM-like Constraints (CHECK constraints document allowed values)
 
-Query: SELECT TABLE_NAME, CONSTRAINT_NAME, CHECK_CLAUSE FROM INFORMATION_SCHEMA.CHECK_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = 'microlending' AND CHECK_CLAUSE LIKE '%IN%' LIMIT 5
-
-ERROR 1054 (42S22) at line 1: Unknown column 'TABLE_NAME' in 'field list'
+description
+Role constraint (allowed values):
+CHECK_CLAUSE
+(`role` in (_utf8mb4\\'borrower\\',_utf8mb4\\'lender\\',_utf8mb4\\'admin\\'))
+description
+Loan status constraint (allowed values):
+CHECK_CLAUSE
+(`status` in (_utf8mb4\\'active\\',_utf8mb4\\'paid_off\\',_utf8mb4\\'defaulted\\',_utf8mb4\\'cancelled\\'))
+description
+Wallet status constraint (allowed values):
+CHECK_CLAUSE
+(`status` in (_utf8mb4\\'active\\',_utf8mb4\\'frozen\\',_utf8mb4\\'closed\\'))
+description
+Application status constraint (allowed values):
+CHECK_CLAUSE
+(`status` in (_utf8mb4\\'pending\\',_utf8mb4\\'approved\\',_utf8mb4\\'rejected\\',_utf8mb4\\'withdrawn\\'))
 
 
 ==> Step 11.3: Database Size

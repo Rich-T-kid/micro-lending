@@ -154,12 +154,13 @@ cat >> "$OUTPUT_FILE" << 'EOF'
 
 EOF
 
-exec_sql "Step 5.1: EXPLAIN - Email lookup using UNIQUE index" "EXPLAIN SELECT * FROM user WHERE email = 'john.doe@email.com'"
+exec_sql "Step 5.1: EXPLAIN ANALYZE - Email lookup using UNIQUE index" "EXPLAIN ANALYZE SELECT * FROM user WHERE email = 'john.doe@email.com'"
 
 cat >> "$OUTPUT_FILE" << 'EOF'
 Analysis: Uses 'const' access type with 'email' UNIQUE index - most efficient lookup
 Expected rows: 1, Filtered: 100%
 Cost: Very low, direct index lookup
+Actual execution shows constant-time lookup with minimal rows examined
 
 EOF
 
@@ -183,7 +184,7 @@ Analysis:
 
 EOF
 
-exec_sql "Step 5.4: EXPLAIN - Complex query with JOIN and ORDER BY" "EXPLAIN SELECT u.full_name, l.principal_amount, l.status, l.created_at FROM user u JOIN loan l ON u.id = l.borrower_id WHERE l.status = 'active' ORDER BY l.created_at DESC LIMIT 10"
+exec_sql "Step 5.4: EXPLAIN ANALYZE - Complex query with JOIN and ORDER BY" "EXPLAIN ANALYZE SELECT u.full_name, l.principal_amount, l.status, l.created_at FROM user u JOIN loan l ON u.id = l.borrower_id WHERE l.status = 'active' ORDER BY l.created_at DESC LIMIT 10"
 
 cat >> "$OUTPUT_FILE" << 'EOF'
 Analysis:
@@ -240,6 +241,29 @@ exec_sql "Q2: What was the previous value before update?" "SELECT old_values, ne
 exec_sql "Q3: All changes to loan table in recent time" "SELECT action, record_id, user_id, created_at FROM audit_log WHERE table_name = 'loan' ORDER BY created_at DESC LIMIT 5"
 exec_sql "Q4: Track wallet balance changes for user" "SELECT old_values, new_values, created_at FROM audit_log WHERE table_name = 'wallet_account' AND action = 'UPDATE' ORDER BY created_at DESC LIMIT 3"
 
+cat >> "$OUTPUT_FILE" << 'EOF'
+
+Demonstrate UPDATE Trigger Creating Audit Entry:
+-------------------------------------------------
+EOF
+
+mysql -h "$DB_HOST" -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" << 'EOSQL' 2>&1 | grep -v "Warning" >> "$OUTPUT_FILE"
+SELECT '==> Make a small balance change to trigger trg_wallet_after_update' as status;
+
+-- Update a wallet balance to trigger the audit
+UPDATE wallet_account 
+SET balance = balance + 1
+WHERE id = 1;
+
+SELECT '==> Prove it hit the audit table' as status;
+-- Show the audit entry created by the trigger
+SELECT table_name, action, record_id, old_values, new_values, created_at
+FROM audit_log
+WHERE table_name='wallet_account' AND action='UPDATE'
+ORDER BY created_at DESC
+LIMIT 1;
+EOSQL
+
 # REQUIREMENT 8
 cat >> "$OUTPUT_FILE" << 'EOF'
 
@@ -289,11 +313,11 @@ TEST 2: RESTRICT DELETE - Cannot delete borrower with active loan
 ------------------------------------------------------------------
 EOF
 
-mysql -h "$DB_HOST" -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" << 'EOSQL' 2>&1 >> "$OUTPUT_FILE"
+mysql -h "$DB_HOST" -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" << 'EOSQL' >> "$OUTPUT_FILE" 2>&1
 SELECT '==> Attempting to delete user with active loan (should fail with FK RESTRICT):' as status;
 
 -- This will fail because loan table has ON DELETE RESTRICT for borrower_id
-DELETE FROM user WHERE id = 1;
+DELETE FROM user WHERE id = (SELECT borrower_id FROM loan WHERE status='active' LIMIT 1);
 EOSQL
 
 # REQUIREMENT 9
@@ -338,7 +362,7 @@ TEST 2: ROLLBACK on Duplicate Key Error (Error Code 1062)
 ----------------------------------------------------------
 EOF
 
-mysql -h "$DB_HOST" -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" << 'EOSQL' 2>&1 >> "$OUTPUT_FILE"
+mysql -h "$DB_HOST" -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" << 'EOSQL' >> "$OUTPUT_FILE" 2>&1
 START TRANSACTION;
 SELECT '==> Attempting to insert duplicate email (should fail with ERROR 1062):' as status;
 
@@ -360,7 +384,7 @@ TEST 3: ROLLBACK on CHECK Constraint Violation (Error Code 3819)
 -----------------------------------------------------------------
 EOF
 
-mysql -h "$DB_HOST" -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" << 'EOSQL' 2>&1 >> "$OUTPUT_FILE"
+mysql -h "$DB_HOST" -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" << 'EOSQL' >> "$OUTPUT_FILE" 2>&1
 START TRANSACTION;
 SELECT '==> Attempting to insert invalid credit score (should fail CHECK constraint):' as status;
 
@@ -379,7 +403,7 @@ TEST 4: ROLLBACK on Foreign Key Constraint (Error Code 1452)
 -------------------------------------------------------------
 EOF
 
-mysql -h "$DB_HOST" -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" << 'EOSQL' 2>&1 >> "$OUTPUT_FILE"
+mysql -h "$DB_HOST" -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" << 'EOSQL' >> "$OUTPUT_FILE" 2>&1
 START TRANSACTION;
 SELECT '==> Attempting to insert wallet for non-existent user (should fail FK constraint):' as status;
 
@@ -487,7 +511,41 @@ cat >> "$OUTPUT_FILE" << 'EOF'
 EOF
 
 exec_sql "Step 11.1: Data Types in USER Table" "SELECT COLUMN_NAME, DATA_TYPE, COLUMN_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'microlending' AND TABLE_NAME = 'user' ORDER BY ORDINAL_POSITION"
-exec_sql "Step 11.2: ENUM-like Constraints (CHECK constraints used instead of ENUM)" "SELECT TABLE_NAME, CONSTRAINT_NAME, CHECK_CLAUSE FROM INFORMATION_SCHEMA.CHECK_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = 'microlending' AND CHECK_CLAUSE LIKE '%IN%' LIMIT 5"
+
+cat >> "$OUTPUT_FILE" << 'EOF'
+
+==> Step 11.2: ENUM-like Constraints (CHECK constraints document allowed values)
+
+EOF
+
+mysql -h "$DB_HOST" -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" << 'EOSQL' 2>&1 | grep -v "Warning" >> "$OUTPUT_FILE"
+-- Show CHECK constraints that define allowed value sets (like enums)
+SELECT 'Role constraint (allowed values):' as description;
+SELECT cc.CHECK_CLAUSE
+FROM INFORMATION_SCHEMA.CHECK_CONSTRAINTS cc
+WHERE cc.CONSTRAINT_SCHEMA = 'microlending' 
+AND cc.CONSTRAINT_NAME = 'chk_role';
+
+SELECT 'Loan status constraint (allowed values):' as description;
+SELECT cc.CHECK_CLAUSE
+FROM INFORMATION_SCHEMA.CHECK_CONSTRAINTS cc
+WHERE cc.CONSTRAINT_SCHEMA = 'microlending' 
+AND cc.CONSTRAINT_NAME = 'chk_loan_status';
+
+SELECT 'Wallet status constraint (allowed values):' as description;
+SELECT cc.CHECK_CLAUSE
+FROM INFORMATION_SCHEMA.CHECK_CONSTRAINTS cc
+WHERE cc.CONSTRAINT_SCHEMA = 'microlending' 
+AND cc.CONSTRAINT_NAME = 'chk_wallet_status';
+
+SELECT 'Application status constraint (allowed values):' as description;
+SELECT cc.CHECK_CLAUSE
+FROM INFORMATION_SCHEMA.CHECK_CONSTRAINTS cc
+WHERE cc.CONSTRAINT_SCHEMA = 'microlending' 
+AND cc.CONSTRAINT_NAME = 'chk_app_status';
+EOSQL
+
+echo "" >> "$OUTPUT_FILE"
 exec_sql "Step 11.3: Database Size" "SELECT ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) AS size_mb FROM information_schema.tables WHERE table_schema = 'microlending'"
 exec_sql "Step 11.4: Table Statistics" "SELECT TABLE_NAME, TABLE_ROWS as row_count, ENGINE FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'microlending' AND TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_NAME"
 exec_sql "Step 11.5: Decimal Precision in LOAN Table" "SELECT COLUMN_NAME, NUMERIC_PRECISION, NUMERIC_SCALE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'microlending' AND TABLE_NAME = 'loan' AND DATA_TYPE = 'decimal'"
