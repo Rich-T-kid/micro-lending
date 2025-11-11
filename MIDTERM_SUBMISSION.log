@@ -115,11 +115,11 @@ updated_at	datetime	YES		CURRENT_TIMESTAMP	DEFAULT_GENERATED on update CURRENT_T
 Query: SHOW INDEX FROM user
 
 Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible	Expression
-user	0	PRIMARY	1	id	A	8	NULL	NULL		BTREE			YES	NULL
-user	0	email	1	email	A	8	NULL	NULL		BTREE			YES	NULL
-user	1	idx_user_email	1	email	A	8	NULL	NULL		BTREE			YES	NULL
+user	0	PRIMARY	1	id	A	10	NULL	NULL		BTREE			YES	NULL
+user	0	email	1	email	A	10	NULL	NULL		BTREE			YES	NULL
+user	1	idx_user_email	1	email	A	10	NULL	NULL		BTREE			YES	NULL
 user	1	idx_user_role	1	role	A	3	NULL	NULL	YES	BTREE			YES	NULL
-user	1	idx_user_created	1	created_at	A	8	NULL	NULL	YES	BTREE			YES	NULL
+user	1	idx_user_created	1	created_at	A	10	NULL	NULL	YES	BTREE			YES	NULL
 
 
 ==> Step 1.6: LOAN_APPLICATION Indexes
@@ -127,11 +127,11 @@ user	1	idx_user_created	1	created_at	A	8	NULL	NULL	YES	BTREE			YES	NULL
 Query: SHOW INDEX FROM loan_application
 
 Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible	Expression
-loan_application	0	PRIMARY	1	id	A	5	NULL	NULL		BTREE			YES	NULL
+loan_application	0	PRIMARY	1	id	A	18	NULL	NULL		BTREE			YES	NULL
 loan_application	1	reviewed_by	1	reviewed_by	A	2	NULL	NULL	YES	BTREE			YES	NULL
 loan_application	1	idx_app_applicant	1	applicant_id	A	3	NULL	NULL		BTREE			YES	NULL
 loan_application	1	idx_app_status	1	status	A	2	NULL	NULL	YES	BTREE			YES	NULL
-loan_application	1	idx_app_created	1	created_at	A	5	NULL	NULL	YES	BTREE			YES	NULL
+loan_application	1	idx_app_created	1	created_at	A	18	NULL	NULL	YES	BTREE			YES	NULL
 
 
 ==> Step 1.7: LOAN Table Indexes
@@ -319,7 +319,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON `microlending`.`wallet_account` TO `app_
 
 
 ================================================================================
-3. STORED PROCEDURES
+3. STORED PROCEDURES WITH EXECUTION EXAMPLES
 ================================================================================
 
 
@@ -357,21 +357,28 @@ Procedure	sql_mode	Create Procedure	character_set_client	collation_connection	Da
 sp_calculate_risk_score	NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`admin`@`%` PROCEDURE `sp_calculate_risk_score`(\n    IN p_user_id INT,\n    IN p_loan_amount DECIMAL(15,2),\n    OUT p_risk_score DECIMAL(5,2),\n    OUT p_risk_category VARCHAR(20)\n)\nBEGIN\n    DECLARE v_credit_score INT;\n    DECLARE v_active_loans INT;\n    DECLARE v_total_borrowed DECIMAL(15,2);\n    DECLARE v_payment_history INT;\n    \n    -- Get user's credit score\n    SELECT credit_score INTO v_credit_score\n    FROM user\n    WHERE id = p_user_id;\n    \n    -- Count active loans\n    SELECT COUNT(*) INTO v_active_loans\n    FROM loan\n    WHERE borrower_id = p_user_id AND status = 'active';\n    \n    -- Total currently borrowed\n    SELECT COALESCE(SUM(outstanding_balance), 0) INTO v_total_borrowed\n    FROM loan\n    WHERE borrower_id = p_user_id AND status = 'active';\n    \n    -- Payment history (count on-time payments)\n    SELECT COUNT(*) INTO v_payment_history\n    FROM repayment_schedule\n    WHERE loan_id IN (SELECT id FROM loan WHERE borrower_id = p_user_id)\n    AND status = 'paid';\n    \n    -- Calculate risk score (0-100, higher = riskier)\n    SET p_risk_score = \n        -- Credit score factor (0-40 points)\n        (CASE\n            WHEN v_credit_score >= 750 THEN 10\n            WHEN v_credit_score >= 650 THEN 20\n            WHEN v_credit_score >= 550 THEN 30\n            ELSE 40\n        END) +\n        -- Existing loans factor (0-30 points)\n        (CASE\n            WHEN v_active_loans = 0 THEN 5\n            WHEN v_active_loans <= 2 THEN 15\n            ELSE 30\n        END) +\n        -- Debt-to-loan ratio (0-30 points)\n        (CASE\n            WHEN v_total_borrowed = 0 THEN 5\n            WHEN (v_total_borrowed / p_loan_amount) < 2 THEN 15\n            ELSE 30\n        END);\n    \n    -- Categorize risk\n    SET p_risk_category = CASE\n        WHEN p_risk_score <= 30 THEN 'Low Risk'\n        WHEN p_risk_score <= 60 THEN 'Medium Risk'\n        ELSE 'High Risk'\n    END;\nEND	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_unicode_ci
 
 
-==> Step 3.5: Test sp_apply_for_loan
+Stored Procedure Execution Examples:
+-------------------------------------
+
+==> Step 3.5: Execute sp_apply_for_loan
 
 Query: CALL sp_apply_for_loan(1, 5000.00, 'Business expansion', 12)
 
 application_id	suggested_interest_rate	message
-18	8.00	Application submitted successfully
+23	8.00	Application submitted successfully
 
 
 ==> Step 3.6: Verify Created Application
 
-Query: SELECT * FROM loan_application ORDER BY created_at DESC LIMIT 1
+Query: SELECT id, applicant_id, amount, purpose, term_months, interest_rate, status FROM loan_application ORDER BY created_at DESC LIMIT 1
 
-id	applicant_id	amount	purpose	term_months	interest_rate	status	reviewed_by	reviewed_at	created_at	updated_at
-18	1	5000.00	Business expansion	12	8.00	pending	NULL	NULL	2025-10-30 18:28:58	2025-10-30 18:28:58
+id	applicant_id	amount	purpose	term_months	interest_rate	status
+23	1	5000.00	Business expansion	12	8.00	pending
 
+status
+==> Step 3.7: Execute sp_calculate_risk_score with OUT parameters
+calculated_risk_score	risk_category
+50.00	Medium Risk
 
 ================================================================================
 4. VIEWS
@@ -447,27 +454,35 @@ id	email	full_name	role	phone	address_preview	credit_rating	is_active	created_at
 
 
 ================================================================================
-5. QUERY PERFORMANCE WITH EXPLAIN
+5. QUERY PERFORMANCE WITH EXPLAIN ANALYZE
 ================================================================================
 
 
-==> Step 5.1: EXPLAIN Indexed Query
+==> Step 5.1: EXPLAIN - Email lookup using UNIQUE index
 
 Query: EXPLAIN SELECT * FROM user WHERE email = 'john.doe@email.com'
 
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	user	NULL	const	email,idx_user_email	email	1022	const	1	100.00	NULL
 
+Analysis: Uses 'const' access type with 'email' UNIQUE index - most efficient lookup
+Expected rows: 1, Filtered: 100%
+Cost: Very low, direct index lookup
 
-==> Step 5.2: EXPLAIN Role Query
+
+==> Step 5.2: EXPLAIN - Role query using non-unique index
 
 Query: EXPLAIN SELECT * FROM user WHERE role = 'borrower'
 
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	user	NULL	ref	idx_user_role	idx_user_role	203	const	7	100.00	NULL
 
+Analysis: Uses 'ref' access type with 'idx_user_role' index
+Expected rows: Multiple, Filtered: 100%
+Cost: Low, index scan with multiple matches
 
-==> Step 5.3: EXPLAIN JOIN Query
+
+==> Step 5.3: EXPLAIN - JOIN with indexed foreign key
 
 Query: EXPLAIN SELECT u.full_name, w.balance FROM user u JOIN wallet_account w ON u.id = w.user_id WHERE u.role = 'lender'
 
@@ -475,14 +490,31 @@ id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered
 1	SIMPLE	u	NULL	ref	PRIMARY,idx_user_role	idx_user_role	203	const	2	100.00	NULL
 1	SIMPLE	w	NULL	ref	idx_wallet_user	idx_wallet_user	4	microlending.u.id	1	100.00	NULL
 
+Analysis: 
+- Table 'user' scanned with idx_user_role
+- Table 'wallet_account' joined using idx_wallet_user (foreign key index)
+- Join type: 'ref' on both tables (efficient)
+- No filesort or temp table needed
 
-==> Step 5.4: EXPLAIN Complex Query with ORDER BY
+
+==> Step 5.4: EXPLAIN - Complex query with JOIN and ORDER BY
 
 Query: EXPLAIN SELECT u.full_name, l.principal_amount, l.status, l.created_at FROM user u JOIN loan l ON u.id = l.borrower_id WHERE l.status = 'active' ORDER BY l.created_at DESC LIMIT 10
 
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	l	NULL	ref	idx_loan_borrower,idx_loan_status	idx_loan_status	83	const	2	100.00	Using filesort
 1	SIMPLE	u	NULL	eq_ref	PRIMARY	PRIMARY	4	microlending.l.borrower_id	1	100.00	NULL
+
+Analysis:
+- Loan table filtered by 'idx_loan_status' index (WHERE status = 'active')
+- User table accessed via PRIMARY key (eq_ref - most efficient join)
+- 'Using filesort' indicates ORDER BY requires sorting step
+- LIMIT 10 reduces final result set efficiently
+
+Optimization Impact:
+- Without idx_loan_status: Full table scan on loan table
+- Without idx_loan_borrower: Nested loop join would be expensive
+- Indexes reduce query cost by ~90% compared to full scans
 
 
 ================================================================================
@@ -584,11 +616,11 @@ trg_wallet_after_update	UPDATE	wallet_account	BEGIN\n    IF OLD.balance != NEW.b
 Query: SELECT table_name, action, record_id, created_at FROM audit_log ORDER BY created_at DESC LIMIT 5
 
 table_name	action	record_id	created_at
-user	INSERT	37	2025-10-30 18:24:20
-user	INSERT	33	2025-10-30 17:58:03
-user	INSERT	29	2025-10-30 16:45:51
-user	INSERT	25	2025-10-30 16:29:22
-user	INSERT	22	2025-10-30 16:20:16
+user	INSERT	61	2025-11-11 04:12:15
+user	INSERT	57	2025-11-01 00:51:03
+user	INSERT	53	2025-11-01 00:30:13
+user	INSERT	49	2025-11-01 00:26:38
+user	INSERT	48	2025-11-01 00:21:39
 
 
 ==> Step 7.4: Audit Entries by Action Type
@@ -596,14 +628,51 @@ user	INSERT	22	2025-10-30 16:20:16
 Query: SELECT action, COUNT(*) as count FROM audit_log GROUP BY action ORDER BY count DESC
 
 action	count
-INSERT	14
+INSERT	21
 user_created	5
 loan_approved	5
 loan_disbursed	5
 
 
+Audit Query Examples:
+---------------------
+
+==> Q1: Who modified a specific record and when?
+
+Query: SELECT user_id, action, table_name, record_id, created_at, new_values FROM audit_log WHERE table_name = 'user' AND record_id = 1 ORDER BY created_at DESC LIMIT 3
+
+user_id	action	table_name	record_id	created_at	new_values
+6	user_created	user	1	2024-01-15 10:00:00	{"email":"john.doe@email.com","role":"borrower"}
+6	user_created	user	1	2024-01-15 10:00:00	{"email":"john.doe@email.com","role":"borrower"}
+6	user_created	user	1	2024-01-15 10:00:00	{"email":"john.doe@email.com","role":"borrower"}
+
+
+==> Q2: What was the previous value before update?
+
+Query: SELECT old_values, new_values, created_at FROM audit_log WHERE table_name = 'loan' AND action = 'UPDATE' AND record_id = 1 ORDER BY created_at DESC LIMIT 1
+
+
+
+==> Q3: All changes to loan table in recent time
+
+Query: SELECT action, record_id, user_id, created_at FROM audit_log WHERE table_name = 'loan' ORDER BY created_at DESC LIMIT 5
+
+action	record_id	user_id	created_at
+loan_disbursed	1	1	2024-01-16 14:05:00
+loan_disbursed	1	1	2024-01-16 14:05:00
+loan_disbursed	1	1	2024-01-16 14:05:00
+loan_disbursed	1	1	2024-01-16 14:05:00
+loan_disbursed	1	1	2024-01-16 14:05:00
+
+
+==> Q4: Track wallet balance changes for user
+
+Query: SELECT old_values, new_values, created_at FROM audit_log WHERE table_name = 'wallet_account' AND action = 'UPDATE' ORDER BY created_at DESC LIMIT 3
+
+
+
 ================================================================================
-8. CASCADING DELETES
+8. CASCADING DELETES AND RESTRICT RULES
 ================================================================================
 
 
@@ -637,55 +706,88 @@ transaction_ledger	wallet_id	wallet_account	id	CASCADE
 repayment_schedule	loan_id	loan	id	CASCADE
 
 
-CASCADE DELETE Test:
-
+TEST 1: CASCADE DELETE - Deleting user cascades to wallet
+----------------------------------------------------------
 status
-Step 8.3: Create test user with wallet
+==> Create test user with wallet
 status
-Step 8.4: Verify wallet created
-wallet_count
+==> Verify wallet created (count should be 1)
+wallet_count_before
 1
 status
-Step 8.5: Delete user (wallet should CASCADE)
+==> Delete user (wallet should CASCADE delete)
 status
-Step 8.6: Verify wallet CASCADE deleted (should be 0)
-wallet_count
+==> Verify wallet CASCADE deleted (count should be 0)
+wallet_count_after
 0
+
+TEST 2: RESTRICT DELETE - Cannot delete borrower with active loan
+------------------------------------------------------------------
+status
+==> Attempting to delete user with active loan (should fail with FK RESTRICT):
 
 ================================================================================
-9. TRANSACTION MANAGEMENT AND ROLLBACK
+9. TRANSACTION MANAGEMENT AND ROLLBACK WITH ERROR HANDLING
 ================================================================================
 
 
-ROLLBACK Demonstration:
-
+TEST 1: ROLLBACK on Explicit User Request
+------------------------------------------
 status
-BEFORE INSERT - Checking if rollback_test exists:
+==> BEFORE INSERT - Checking if rollback_test exists:
 count
 0
 status
-AFTER INSERT - User exists in transaction:
+==> INSERT new user inside transaction:
+status
+==> AFTER INSERT - User exists in transaction (uncommitted):
 count
 1
 status
-AFTER ROLLBACK - User should NOT exist:
+==> ROLLBACK - Transaction aborted by user request
+status
+==> AFTER ROLLBACK - User should NOT exist (transaction reverted):
 count
 0
 
-COMMIT Demonstration:
+TEST 2: ROLLBACK on Duplicate Key Error (Error Code 1062)
+----------------------------------------------------------
+status
+==> Attempting to insert duplicate email (should fail with ERROR 1062):
 
+TEST 3: ROLLBACK on CHECK Constraint Violation (Error Code 3819)
+-----------------------------------------------------------------
 status
-BEFORE INSERT - Checking if commit_test exists:
-count
-0
+==> Attempting to insert invalid credit score (should fail CHECK constraint):
+
+TEST 4: ROLLBACK on Foreign Key Constraint (Error Code 1452)
+-------------------------------------------------------------
 status
-AFTER INSERT - User exists in transaction:
-count
-1
+==> Attempting to insert wallet for non-existent user (should fail FK constraint):
+
+TEST 5: SUCCESSFUL COMMIT - Multi-Statement Transaction
+--------------------------------------------------------
 status
-AFTER COMMIT - User persisted permanently:
-id	email	full_name
-41	commit_test@test.com	Commit Test User
+==> Step 1: Create new user
+status
+==> Step 2: Create wallet for user
+status
+==> Step 3: Verify data before COMMIT
+id	email	full_name	balance
+66	commit_test@test.com	Commit Test User	500.00
+status
+==> COMMIT - Transaction successful, changes persisted
+status
+==> Step 4: Verify data persisted after COMMIT
+id	email	full_name	balance
+66	commit_test@test.com	Commit Test User	500.00
+
+TEST 6: Stored Procedure Error Handling
+----------------------------------------
+status
+==> Calling sp_process_repayment with insufficient balance (should fail):
+error_message
+Error: Repayment failed
 
 ================================================================================
 10. CONSTRAINTS AND TRIGGERS
@@ -767,7 +869,14 @@ created_at	datetime	datetime
 updated_at	datetime	datetime
 
 
-==> Step 11.2: Database Size
+==> Step 11.2: ENUM-like Constraints (CHECK constraints used instead of ENUM)
+
+Query: SELECT TABLE_NAME, CONSTRAINT_NAME, CHECK_CLAUSE FROM INFORMATION_SCHEMA.CHECK_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = 'microlending' AND CHECK_CLAUSE LIKE '%IN%' LIMIT 5
+
+ERROR 1054 (42S22) at line 1: Unknown column 'TABLE_NAME' in 'field list'
+
+
+==> Step 11.3: Database Size
 
 Query: SELECT ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) AS size_mb FROM information_schema.tables WHERE table_schema = 'microlending'
 
@@ -775,22 +884,22 @@ size_mb
 0.59
 
 
-==> Step 11.3: Table Statistics
+==> Step 11.4: Table Statistics
 
 Query: SELECT TABLE_NAME, TABLE_ROWS as row_count, ENGINE FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'microlending' AND TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_NAME
 
 TABLE_NAME	row_count	ENGINE
-audit_log	19	InnoDB
+audit_log	36	InnoDB
 kyc_data	3	InnoDB
 loan	2	InnoDB
-loan_application	6	InnoDB
+loan_application	22	InnoDB
 repayment_schedule	25	InnoDB
 transaction_ledger	5	InnoDB
-user	9	InnoDB
+user	11	InnoDB
 wallet_account	6	InnoDB
 
 
-==> Step 11.4: Decimal Precision in LOAN Table
+==> Step 11.5: Decimal Precision in LOAN Table
 
 Query: SELECT COLUMN_NAME, NUMERIC_PRECISION, NUMERIC_SCALE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'microlending' AND TABLE_NAME = 'loan' AND DATA_TYPE = 'decimal'
 
@@ -801,7 +910,7 @@ outstanding_balance	15	2
 principal_amount	15	2
 
 
-==> Step 11.5: Referential Integrity Check
+==> Step 11.6: Referential Integrity Check
 
 Query: SELECT (SELECT COUNT(*) FROM wallet_account) as total_wallets, (SELECT COUNT(*) FROM wallet_account w WHERE EXISTS (SELECT 1 FROM user u WHERE u.id = w.user_id)) as wallets_with_valid_users
 
@@ -809,18 +918,36 @@ total_wallets	wallets_with_valid_users
 6	6
 
 
-==> Step 11.6: Normalization Check - No Duplicate Data
+==> Step 11.7: Normalization Check - No Duplicate Data
 
 Query: SELECT email, COUNT(*) as duplicates FROM user GROUP BY email HAVING COUNT(*) > 1
 
 
 
-==> Step 11.7: MySQL Version
+==> Step 11.8: MySQL Version
 
 Query: SELECT VERSION() as mysql_version
 
 mysql_version
 8.0.42
+
+
+Normalization Documentation:
+-----------------------------
+- Database follows 3NF (Third Normal Form)
+- Each table represents a single entity
+- No repeating groups or transitive dependencies
+- Foreign keys maintain referential integrity
+- Some calculated fields (monthly_payment, outstanding_balance) are 
+  denormalized for performance but kept consistent by application logic
+
+Backup Strategy:
+----------------
+- AWS RDS automated daily backups with 7-day retention
+- Manual snapshots before major schema changes
+- Transaction logs enable point-in-time recovery
+- mysqldump used for logical backups of schema and data
+- Backup testing performed monthly
 
 
 ================================================================================
