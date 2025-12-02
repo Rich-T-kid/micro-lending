@@ -1,25 +1,37 @@
-# Micro-Lending Platform - Technical Design Document
+# Micro-Lending Platform
 
-**Version:** 1.0  
+**Version:** 2.0  
 **Authors:** Richard Baah, Jose Lamela, Saksham Mehta  
-**Date:** October 30, 2025  
+**Date:** December 2025  
 **GitHub:** https://github.com/Rich-T-kid/micro-lending
 
 > See the companion **[Functional Requirements Document](Functional_Req.md)** for user-facing behavior and use cases.
 
 ---
 
+## Project Overview
+
+This platform provides peer-to-peer micro-lending services with a complete loan lifecycle management system. The project consists of two phases:
+
+**Phase 1 (Midterm):** Core transactional database with OLTP schema, user management, loan processing, and audit logging.
+
+**Phase 2 (Final):** Analytics and reporting layer with star schema, ETL pipeline, Redis caching, and enhanced GUI features.
+
+---
+
 ## 1. System Architecture (High-Level Overview)
 
 **Three-tier architecture** separating concerns:
-- **Presentation Layer:** Web UI built with HTML, CSS, and JavaScript
+- **Presentation Layer:** Web UI built with HTML, CSS, and JavaScript with cached dropdowns and paged data grids
 - **Business Logic Layer:** FastAPI service exposing REST endpoints for authentication, KYC, loan applications, loans, repayments, wallets, and reports
-- **Data Layer:** MySQL 8.0.42 hosted on AWS RDS at micro-lending.cmvo24soe2b0.us-east-1.rds.amazonaws.com with appropriate database privileges
+- **Data Layer:** MySQL 8.0.42 hosted on AWS RDS with OLTP schema for transactions and star schema for analytics
+- **Caching Layer:** Redis for dropdown caching and look-ahead paging
 
 Deployment highlights:
 - Stateless API containers that scale horizontally
 - AWS RDS MySQL instance with automated backups and monitoring
 - Read-only analytics using the `read_only_analyst` database role
+- Docker-based Redis cache for performance optimization
 
 ---
 
@@ -28,9 +40,11 @@ Deployment highlights:
 - **Frontend:** HTML, CSS, JavaScript
 - **Backend:** Python 3 with FastAPI and Pydantic for request/response validation; SQLAlchemy 2.0 with PyMySQL for database access
 - **Database:** MySQL 8.0.42 on AWS RDS with schema defined in `schema.sql`
+- **Caching:** Redis 7 running in Docker for dropdown and grid caching
 - **Authentication:** JWT-based sessions using PyJWT library; passwords hashed with SHA256
 - **External Services:** Payment gateway and KYC provider integrations are simulated with metadata stored in `kyc_data` table
 - **Configuration:** Environment variables managed through python-dotenv with credentials in `.env` file
+- **Containerization:** Docker Compose for Redis and local development services
 
 ---
 
@@ -160,6 +174,7 @@ The complete entity-relationship diagram is available in the project documentati
 - Python 3.9+
 - Node.js 16+
 - MySQL 8.0+ client
+- Docker and Docker Compose
 
 ### Setup
 
@@ -175,20 +190,41 @@ MYSQL_PASSWORD=micropass
 MYSQL_HOST=micro-lending.cmvo24soe2b0.us-east-1.rds.amazonaws.com
 MYSQL_DATABASE=microlending
 JWT_SECRET=default_dev_key_replace_in_env
+REDIS_HOST=localhost
+REDIS_PORT=6379
 EOF
 
-# 3. Initialize database
+# 3. Start Redis
+docker-compose up -d
+
+# 4. Initialize database
 mysql -h micro-lending.cmvo24soe2b0.us-east-1.rds.amazonaws.com \
       -u admin -pmicropass microlending < db/schema.sql
 
-# 4. Start servers (two terminals)
+# 5. Start servers (two terminals)
 ./start_backend.sh   # Terminal 1: API on port 8000
 ./start_frontend.sh  # Terminal 2: Web UI on port 3000
 
-# 5. Access
+# 6. Access
 # Frontend: http://localhost:3000
 # API Docs: http://localhost:8000/docs
 # Demo Login: john.doe@email.com / password123
+```
+
+### Docker Commands
+
+```bash
+# Start Redis
+docker-compose up -d
+
+# Stop Redis
+docker-compose down
+
+# View Redis logs
+docker-compose logs redis
+
+# Connect to Redis CLI
+docker exec -it microlending-redis redis-cli
 ```
 
 ### Database Access
@@ -202,6 +238,31 @@ mysql -h micro-lending.cmvo24soe2b0.us-east-1.rds.amazonaws.com \
 ```bash
 mysql -h micro-lending.cmvo24soe2b0.us-east-1.rds.amazonaws.com \
       -u admin -pmicropass microlending
+```
+
+---
+
+## Project Structure
+
+```
+microlending_project/
+├── db/                     # Database scripts
+│   ├── schema.sql          # OLTP schema DDL
+│   ├── reset.sql           # Database reset script
+│   └── tests/              # SQL test scripts
+├── src/
+│   └── api_server/         # FastAPI backend
+│       ├── server.py       # API endpoints
+│       └── models.py       # SQLAlchemy models
+├── frontend/               # Web UI
+│   ├── server.js           # Express static server
+│   └── *.html              # HTML pages
+├── reporting/              # Star schema and ETL
+├── cache/                  # Redis cache utilities
+├── docs/                   # Project documentation
+├── logs/                   # ETL and application logs
+├── docker-compose.yml      # Docker services
+└── requirements.txt        # Python dependencies
 ```
 
 ---
