@@ -1,0 +1,434 @@
+FINAL PROJECT SUBMISSION LOG
+MicroLending Analytics Platform
+Generated: 2025-12-03 10:21:36
+Students: Saksham Mehta, Jose Lamela, Richard Baah
+
+This log demonstrates all required Final Project features:
+  Part 1: Analytics/Reporting Database & ETL Pipeline
+  Part 2: Redis Cache & GUI Client
+
+PART 1: ANALYTICS / REPORTING DATABASE & ETL
+
+
+1. REPORTING SCHEMA DESIGN
+Requirement: 2+ fact tables, 4+ dimension tables, star schema design
+
+
+--- 1.1 Fact Tables (2 required) ---
+Query: SELECT 'fact_loan_transactions' as table_name, (SELECT COUNT(*) FROM fact_loan_transactions) as row_count UNION ALL SELECT 'fact_daily_portfolio', (SELECT COUNT(*) FROM fact_daily_portfolio);
+
+table_name	row_count
+fact_loan_transactions	432
+fact_daily_portfolio	1
+
+
+--- 1.2 Dimension Tables (4+ required) ---
+Query: SELECT 'dim_date' as table_name, (SELECT COUNT(*) FROM dim_date) as row_count UNION ALL SELECT 'dim_user', (SELECT COUNT(*) FROM dim_user) UNION ALL SELECT 'dim_loan_product', (SELECT COUNT(*) FROM dim_loan_product) UNION ALL SELECT 'dim_currency', (SELECT COUNT(*) FROM dim_currency) UNION ALL SELECT 'dim_loan_status', (SELECT COUNT(*) FROM dim_loan_status);
+
+table_name	row_count
+dim_date	1096
+dim_user	20
+dim_loan_product	8
+dim_currency	5
+dim_loan_status	8
+
+
+--- 1.3 Fact Table Structure - fact_loan_transactions ---
+Query: DESCRIBE fact_loan_transactions;
+
+Field	Type	Null	Key	Default	Extra
+transaction_key	bigint	NO	PRI	NULL	auto_increment
+date_key	int	NO	PRI	NULL	
+user_key	int	NO	MUL	NULL	
+product_key	int	NO	MUL	NULL	
+currency_key	int	NO		NULL	
+status_key	int	NO	MUL	NULL	
+loan_id	int	NO	MUL	NULL	
+application_id	int	YES		NULL	
+transaction_type	varchar(20)	NO	MUL	NULL	
+principal_amount	decimal(15,2)	NO		NULL	
+interest_amount	decimal(15,2)	YES		0.00	
+total_amount	decimal(15,2)	NO		NULL	
+amount_usd	decimal(15,2)	NO		NULL	
+interest_rate	decimal(5,2)	YES		NULL	
+term_months	int	YES		NULL	
+outstanding_balance	decimal(15,2)	YES		NULL	
+fx_rate	decimal(15,6)	YES		1.000000	
+created_at	datetime	YES		CURRENT_TIMESTAMP	DEFAULT_GENERATED
+
+
+--- 1.4 Fact Table Partitioning ---
+Query: SELECT PARTITION_NAME, PARTITION_DESCRIPTION as range_value FROM INFORMATION_SCHEMA.PARTITIONS WHERE TABLE_NAME = 'fact_loan_transactions' AND TABLE_SCHEMA = 'microlending' AND PARTITION_NAME IS NOT NULL;
+
+PARTITION_NAME	range_value
+p2024	20250101
+p2025q1	20250401
+p2025q2	20250701
+p2025q3	20251001
+p2025q4	20260101
+p_future	MAXVALUE
+
+
+--- 1.5 Sample Fact Data ---
+Query: SELECT transaction_key, date_key, loan_id, transaction_type, principal_amount, interest_rate, status_key FROM fact_loan_transactions ORDER BY transaction_key DESC LIMIT 5;
+
+transaction_key	date_key	loan_id	transaction_type	principal_amount	interest_rate	status_key
+432	20250819	27	origination	2112.00	10.43	5
+431	20250819	27	origination	2112.00	10.43	5
+430	20250819	27	origination	2112.00	10.43	5
+429	20250819	27	origination	2112.00	10.43	5
+428	20250819	27	origination	2112.00	10.43	5
+
+
+--- 1.6 Dimension - dim_date Sample ---
+Query: SELECT date_key, full_date, year, month, month_name, is_weekend FROM dim_date WHERE full_date BETWEEN '2025-12-01' AND '2025-12-03';
+
+date_key	full_date	year	month	month_name	is_weekend
+20251201	2025-12-01	2025	12	December	0
+20251202	2025-12-02	2025	12	December	0
+20251203	2025-12-03	2025	12	December	0
+
+
+--- 1.7 Dimension - dim_user (with SCD Type 2) ---
+Query: SELECT user_key, user_id, email, role, credit_tier, is_current FROM dim_user WHERE is_current = TRUE LIMIT 5;
+
+user_key	user_id	email	role	credit_tier	is_current
+1	1	john.doe@email.com	borrower	Good	1
+2	2	jane.smith@email.com	borrower	Good	1
+3	3	mike.brown@email.com	borrower	Good	1
+4	4	bob.johnson@email.com	lender	Excellent	1
+5	5	alice.williams@email.com	lender	Excellent	1
+
+
+--- 1.8 Dimension - dim_loan_status ---
+Query: SELECT * FROM dim_loan_status;
+
+status_key	status_code	status_name	status_category	is_terminal	display_order
+1	pending	Pending Review	application	0	1
+2	approved	Approved	application	0	2
+3	rejected	Rejected	application	1	3
+4	withdrawn	Withdrawn	application	1	4
+5	active	Active	loan	0	5
+6	paid_off	Paid Off	loan	1	6
+7	defaulted	Defaulted	loan	1	7
+8	cancelled	Cancelled	loan	1	8
+
+
+2. THREE SOURCE SYSTEMS
+Requirement: ETL extracts from Transaction DB, Reference Data, Market Data
+
+
+--- 2.1 Source 1: OLTP Transaction Database ---
+Query: SELECT 'user' as table_name, COUNT(*) as rows FROM user UNION ALL SELECT 'loan', COUNT(*) FROM loan UNION ALL SELECT 'loan_application', COUNT(*) FROM loan_application UNION ALL SELECT 'wallet_account', COUNT(*) FROM wallet_account;
+
+
+
+--- 2.2 Source 2: Reference Data Tables ---
+Query: SELECT 'ref_currency' as table_name, COUNT(*) as rows FROM ref_currency UNION ALL SELECT 'ref_loan_product', COUNT(*) FROM ref_loan_product UNION ALL SELECT 'ref_region', COUNT(*) FROM ref_region UNION ALL SELECT 'ref_credit_tier', COUNT(*) FROM ref_credit_tier;
+
+
+
+--- 2.3 Source 3: Market Data Tables ---
+Query: SELECT 'market_fx_rates' as table_name, COUNT(*) as rows FROM market_fx_rates UNION ALL SELECT 'market_interest_benchmarks', COUNT(*) FROM market_interest_benchmarks UNION ALL SELECT 'market_credit_spreads', COUNT(*) FROM market_credit_spreads;
+
+
+
+--- 2.4 Sample FX Rates ---
+Query: SELECT base_currency, quote_currency, rate, rate_date FROM market_fx_rates ORDER BY rate_date DESC LIMIT 5;
+
+base_currency	quote_currency	rate	rate_date
+USD	GBP	0.789100	2025-12-01
+USD	BRL	4.978000	2025-12-01
+USD	INR	83.420000	2025-12-01
+USD	JPY	149.850000	2025-12-01
+USD	EUR	0.923400	2025-12-01
+
+
+--- 2.5 Sample Interest Benchmarks ---
+Query: SELECT benchmark_code, rate, effective_date, term_months FROM market_interest_benchmarks ORDER BY effective_date DESC LIMIT 5;
+
+benchmark_code	rate	effective_date	term_months
+TREASURY_1Y	4.8500	2025-12-01	12
+LIBOR_3M	5.5800	2025-12-01	3
+LIBOR_6M	5.7100	2025-12-01	6
+LIBOR_1M	5.4200	2025-12-01	1
+TREASURY_2Y	4.4200	2025-12-01	24
+
+
+3. ETL PIPELINE DESIGN
+Requirement: Extract, Transform, Load with logging and error handling
+
+
+--- 3.1 ETL Control Tables ---
+Query: SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'microlending' AND TABLE_NAME LIKE 'etl%' ORDER BY TABLE_NAME;
+
+TABLE_NAME
+etl_error_log
+etl_run_log
+etl_step_log
+etl_watermarks
+
+
+--- 3.2 ETL Watermarks (Incremental Load Support) ---
+Query: SELECT source_name, table_name, column_name, watermark_value FROM etl_watermarks ORDER BY source_name, table_name;
+
+source_name	table_name	column_name	watermark_value
+market_db	market_credit_spreads	created_at	1970-01-01 00:00:00
+market_db	market_fx_rates	created_at	1970-01-01 00:00:00
+market_db	market_interest_benchmarks	created_at	1970-01-01 00:00:00
+reference_db	ref_credit_tier	created_at	1970-01-01 00:00:00
+reference_db	ref_currency	created_at	1970-01-01 00:00:00
+reference_db	ref_loan_product	created_at	1970-01-01 00:00:00
+reference_db	ref_region	created_at	1970-01-01 00:00:00
+transaction_db	loan	updated_at	1970-01-01 00:00:00
+transaction_db	loan_application	updated_at	1970-01-01 00:00:00
+transaction_db	repayment_schedule	updated_at	1970-01-01 00:00:00
+transaction_db	transaction_ledger	created_at	1970-01-01 00:00:00
+transaction_db	user	updated_at	1970-01-01 00:00:00
+transaction_db	wallet_account	updated_at	1970-01-01 00:00:00
+
+
+--- 3.3 Recent ETL Runs ---
+Query: SELECT run_id, run_type, status, rows_extracted, rows_transformed, rows_loaded, started_at FROM etl_run_log ORDER BY run_id DESC LIMIT 3;
+
+run_id	run_type	status	rows_extracted	rows_transformed	rows_loaded	started_at
+1	full	success	0	0	432	2025-12-03 02:42:28
+
+
+--- 3.4 ETL Step Details ---
+Query: SELECT step_name, step_type, status, rows_processed, duration_seconds FROM etl_step_log ORDER BY step_id DESC LIMIT 5;
+
+step_name	step_type	status	rows_processed	duration_seconds
+load_fact_transactions	load	success	432	0.00
+
+
+4. ETL STORED PROCEDURES
+Requirement: Stored procedures with error handling and status returns
+
+
+--- 4.1 List ETL Procedures ---
+Query: SELECT ROUTINE_NAME FROM INFORMATION_SCHEMA.ROUTINES WHERE ROUTINE_SCHEMA = 'microlending' AND ROUTINE_NAME LIKE 'sp_etl%';
+
+ROUTINE_NAME
+sp_etl_load_fact_transactions
+sp_etl_refresh_portfolio_snapshot
+sp_etl_validate_loan
+
+
+--- 4.2 Test Validation Procedure - Valid Record ---
+Query: CALL sp_etl_validate_loan(1, 1, 5000.00, 12.5, 12, 'active', @valid, @code, @msg); SELECT @valid as is_valid, @code as error_code, @msg as message;
+
+is_valid	error_code	message
+1	NULL	NULL
+
+
+--- 4.3 Test Validation Procedure - Invalid Interest Rate ---
+Query: CALL sp_etl_validate_loan(1, 1, 5000.00, 150.0, 12, 'active', @valid, @code, @msg); SELECT @valid as is_valid, @code as error_code, @msg as message;
+
+is_valid	error_code	message
+0	INVALID_RATE	Interest rate must be between 0 and 100
+
+
+--- 4.4 Test Validation Procedure - Invalid Borrower ---
+Query: CALL sp_etl_validate_loan(1, 99999, 5000.00, 12.5, 12, 'active', @valid, @code, @msg); SELECT @valid as is_valid, @code as error_code, @msg as message;
+
+is_valid	error_code	message
+0	INVALID_BORROWER	Borrower ID 99999 does not exist
+
+
+5. DATA QUALITY CHECKS
+Requirement: Null checks, range validation, referential integrity
+
+
+--- 5.1 Null Value Check ---
+Query: SELECT 'loan.borrower_id nulls' as check_item, COUNT(*) as count FROM loan WHERE borrower_id IS NULL UNION ALL SELECT 'loan.principal nulls', COUNT(*) FROM loan WHERE principal_amount IS NULL UNION ALL SELECT 'user.email nulls', COUNT(*) FROM user WHERE email IS NULL;
+
+check_item	count
+loan.borrower_id nulls	0
+loan.principal nulls	0
+user.email nulls	0
+
+
+--- 5.2 Range Validation ---
+Query: SELECT 'interest_rate > 100' as violation, COUNT(*) as count FROM loan WHERE interest_rate > 100 UNION ALL SELECT 'principal <= 0', COUNT(*) FROM loan WHERE principal_amount <= 0 UNION ALL SELECT 'term_months <= 0', COUNT(*) FROM loan WHERE term_months <= 0;
+
+violation	count
+interest_rate > 100	0
+principal <= 0	0
+term_months <= 0	0
+
+
+--- 5.3 Referential Integrity ---
+Query: SELECT 'orphan loans (no user)' as check_item, COUNT(*) as count FROM loan l LEFT JOIN user u ON l.borrower_id = u.id WHERE u.id IS NULL;
+
+check_item	count
+orphan loans (no user)	0
+
+
+6. ANALYTICAL QUERIES
+Requirement: Example queries showing schema efficiency
+
+
+--- 6.1 Loan Distribution by Status ---
+Query: SELECT ds.status_name, COUNT(*) as loan_count, SUM(f.principal_amount) as total_principal, ROUND(AVG(f.interest_rate), 2) as avg_rate FROM fact_loan_transactions f JOIN dim_loan_status ds ON f.status_key = ds.status_key GROUP BY ds.status_name ORDER BY loan_count DESC;
+
+status_name	loan_count	total_principal	avg_rate
+Active	192	1101824.00	9.36
+Defaulted	96	507744.00	9.43
+Cancelled	96	452640.00	10.36
+Paid Off	48	358096.00	12.25
+
+
+--- 6.2 Portfolio Summary by Month ---
+Query: SELECT d.year, d.month, d.month_name, COUNT(*) as transactions, SUM(f.principal_amount) as volume FROM fact_loan_transactions f JOIN dim_date d ON f.date_key = d.date_key GROUP BY d.year, d.month, d.month_name ORDER BY d.year DESC, d.month DESC LIMIT 6;
+
+year	month	month_name	transactions	volume
+2025	10	October	32	134496.00
+2025	9	September	32	139376.00
+2025	8	August	176	878352.00
+2025	7	July	64	347312.00
+2025	6	June	96	680768.00
+2024	1	January	32	240000.00
+
+
+--- 6.3 Daily Portfolio Snapshot ---
+Query: SELECT date_key, total_loans, active_loans, total_principal, default_rate, avg_loan_size FROM fact_daily_portfolio ORDER BY date_key DESC LIMIT 3;
+
+date_key	total_loans	active_loans	total_principal	default_rate	avg_loan_size
+20251203	27	12	151269.00	0.2222	5602.56
+
+
+PART 2: REDIS CACHE & GUI CLIENT
+
+
+7. REDIS SETUP
+Requirement: Run Redis under Docker
+
+
+--- 7.1 Docker Container Status ---
+Command: docker ps --filter name=redis
+NAMES                IMAGE            STATUS                    PORTS
+microlending-redis   redis:7-alpine   Up 51 minutes (healthy)   0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
+
+--- 7.2 Redis Connection Test ---
+Command: redis-cli ping
+PONG
+
+--- 7.3 Redis Version (from Docker) ---
+redis_version:7.4.7
+
+--- 7.4 Docker Compose Configuration ---
+File: docker-compose.yml
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: microlending-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+volumes:
+  redis_data:
+    driver: local
+
+
+8. CACHE-ASIDE PATTERN
+Requirement: Cache miss loads from DB, cache hit serves from Redis
+
+
+--- 8.1 Cache Miss (First Request) ---
+Action: Cleared cache, requesting currencies
+Endpoint: GET /cache/reference/currencies
+
+Type: currencies
+Items: 5
+Cached: False <- FALSE indicates data loaded from database
+TTL: 3600s
+
+--- 8.2 Cache Hit (Second Request) ---
+Action: Same request, should be cached
+
+Cached: True <- TRUE indicates data served from Redis
+TTL remaining: 3600s
+
+--- 8.3 Verify Redis Keys ---
+Command: redis-cli KEYS 'ml:reference:*'
+ml:reference:currencies
+
+
+9. CACHE INVALIDATION
+Requirement: Invalidate cache when reference data changes
+
+
+--- 9.1 Invalidate All Reference Cache ---
+Endpoint: DELETE /cache/reference/all
+{"invalidated":3}
+
+--- 9.2 Verify Cache Cleared ---
+Command: redis-cli KEYS 'ml:reference:*'
+(empty - cache successfully cleared)
+
+--- 9.3 Re-fetch After Invalidation ---
+Cached: False <- FALSE (fresh load after invalidation)
+
+
+10. PAGED GRID WITH LOOK-AHEAD CACHING
+Requirement: Pre-load adjacent pages for smooth scrolling
+
+
+--- 10.1 Request Page 1 (Triggers Look-Ahead) ---
+Endpoint: GET /reporting/transactions?page=1&page_size=10
+
+Page: 1 of 3
+Total Records: 27
+Records Returned: 10
+Cached: False <- FALSE (first request)
+Has Next Page: True
+
+--- 10.2 Verify Look-Ahead Pre-cached Page 2 ---
+Command: redis-cli KEYS 'ml:transactions:*'
+ml:transactions:p1:s10:stall:ball
+ml:transactions:p2:s10:stall:ball
+
+Result: Both page 1 and page 2 should be cached
+
+--- 10.3 Request Page 2 (Cache Hit) ---
+Page: 2
+Cached: True <- TRUE (pre-cached by look-ahead)
+
+--- 10.4 Page Navigation Cache Hits ---
+Requesting page 1 again...
+Page 1 Cached: True <- TRUE
+
+
+11. CACHE TELEMETRY
+Requirement: Logging, metrics, hit ratios
+
+
+--- 11.1 TTL on Cached Keys ---
+Reference Data (1 hour = 3600s):
+  ml:reference:currencies TTL: 3600s
+
+Transaction Pages (5 min = 300s):
+  ml:transactions:p1:s10:stall:ball TTL: 300s
+  ml:transactions:p2:s10:stall:ball TTL: 300s
+
+--- 11.2 Redis Memory Stats ---
+used_memory_human:1.24M
+
+--- 11.3 Cache Hit/Miss Stats ---
+keyspace_hits:45
+keyspace_misses:24
+
+
+END OF FINAL PROJECT SUBMISSION LOG

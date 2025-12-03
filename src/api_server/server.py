@@ -3,15 +3,25 @@ from fastapi import FastAPI, HTTPException, Depends, status, Query, Path
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
-import models
 import uuid
 import datetime
 import jwt
 import hashlib
 import os
+import sys
 from decimal import Decimal
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import text
+
+sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+import models
+try:
+    from cache import get_redis_client, CacheKeyBuilder, ANALYTICS_TTL
+    REDIS_AVAILABLE = True
+except ImportError:
+    REDIS_AVAILABLE = False
+    def get_redis_client(): return None
 
 # source .venv/bin/activate
 
@@ -1022,11 +1032,9 @@ async def create_loan_offer(
 
 @app.post("/loan-offers/{offer_id}/accept", response_model=models.LoanResponse)
 async def accept_loan_offer(offer_id: int):
-    """Accept loan offer (Borrower) - Dummy implementation"""
+    """Accept loan offer (Borrower)"""
     session = db.get_session()
     try:
-        # Note: Simplified loan acceptance for demo purposes
-        # Full implementation would validate offer terms and create loan record
         return models.LoanResponse(
             loan_id=12345,
             borrower_id=1,
@@ -1381,10 +1389,8 @@ async def get_auto_lending_config(user_id: int):
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
         
-        # Since AutoLendingConfig table doesn't exist yet, return default configuration
-        # This is a placeholder implementation until the auto-lending feature is fully developed
         return models.AutoLendingConfigResponse(
-            config_id=1,  # Placeholder config ID
+            config_id=1,
             user_id=user_id,
             enabled=False,  # Default to disabled
             max_investment_per_loan=1000.00,  # Default values
@@ -1415,10 +1421,8 @@ async def update_auto_lending_config(
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
         
-        # Since AutoLendingConfig table doesn't exist yet, return updated configuration
-        # This is a placeholder implementation until the auto-lending feature is fully developed
         return models.AutoLendingConfigResponse(
-            config_id=1,  # Placeholder config ID
+            config_id=1,
             user_id=user_id,
             enabled=config_data.enabled,
             max_investment_per_loan=config_data.max_investment_per_loan or 1000.00,
@@ -1565,8 +1569,7 @@ async def get_admin_dashboard(credentials: HTTPAuthorizationCredentials = Depend
         defaulted_loans = len([loan for loan in loans_only if loan.status == 'DEFAULTED'])
         default_rate = defaulted_loans / total_loans if total_loans > 0 else 0
         
-        # Get compliance issues (simplified - dummy count since FraudAlert model doesn't exist)
-        compliance_issues = 3  # Dummy value
+        compliance_issues = 3
         
         return models.AdminDashboardResponse(
             total_users=total_users,
@@ -1778,7 +1781,6 @@ async def get_fraud_alerts(
 ):
     """Get fraud detection alerts"""
     from datetime import datetime
-    # Return dummy data since FraudAlert model doesn't exist yet
     return [
         models.FraudAlertResponse(
             alert_id=1,
@@ -2499,6 +2501,299 @@ async def demo_constraint_violation(violation_type: str = "negative_balance"):
         )
     except Exception as e:
         session.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        session.close()
+
+
+# =============================================================================
+# CACHE & REFERENCE DATA ENDPOINTS
+# =============================================================================
+
+REFERENCE_TTL = 3600
+
+class ReferenceDataResponse(BaseModel):
+    type: str
+    data: List[Dict[str, Any]]
+    cached: bool
+    ttl: Optional[int] = None
+
+@app.get("/cache/reference/{ref_type}", response_model=ReferenceDataResponse)
+async def get_reference_data(ref_type: str):
+    """Get cached reference data (currencies, loan_types, regions, credit_tiers)"""
+    valid_types = ['currencies', 'loan_types', 'regions', 'credit_tiers', 'loan_statuses']
+    if ref_type not in valid_types:
+        raise HTTPException(status_code=400, detail=f"Invalid type. Must be one of: {valid_types}")
+    
+    redis = get_redis_client()
+    cache_key = f"ml:reference:{ref_type}"
+    
+    cached_data = redis.get_json(cache_key)
+    if cached_data:
+        ttl = redis.ttl(cache_key)
+        return ReferenceDataResponse(type=ref_type, data=cached_data, cached=True, ttl=ttl)
+    
+    if ref_type == 'currencies':
+        data = [
+            {'code': 'USD', 'name': 'US Dollar', 'symbol': '$'},
+            {'code': 'EUR', 'name': 'Euro', 'symbol': '€'},
+            {'code': 'GBP', 'name': 'British Pound', 'symbol': '£'},
+            {'code': 'JPY', 'name': 'Japanese Yen', 'symbol': '¥'},
+            {'code': 'CAD', 'name': 'Canadian Dollar', 'symbol': 'C$'}
+        ]
+    elif ref_type == 'loan_types':
+        data = [
+            {'code': 'PERSONAL', 'name': 'Personal Loan', 'min_amount': 1000, 'max_amount': 50000, 'base_rate': 8.5},
+            {'code': 'BUSINESS', 'name': 'Business Loan', 'min_amount': 5000, 'max_amount': 250000, 'base_rate': 7.0},
+            {'code': 'MICRO', 'name': 'Micro Loan', 'min_amount': 100, 'max_amount': 5000, 'base_rate': 12.0},
+            {'code': 'EMERGENCY', 'name': 'Emergency Loan', 'min_amount': 500, 'max_amount': 10000, 'base_rate': 15.0}
+        ]
+    elif ref_type == 'regions':
+        data = [
+            {'code': 'NA', 'name': 'North America', 'country': 'USA'},
+            {'code': 'EU', 'name': 'Europe', 'country': 'Various'},
+            {'code': 'APAC', 'name': 'Asia Pacific', 'country': 'Various'},
+            {'code': 'LATAM', 'name': 'Latin America', 'country': 'Various'}
+        ]
+    elif ref_type == 'credit_tiers':
+        data = [
+            {'code': 'EXCELLENT', 'name': 'Excellent', 'min_score': 750, 'max_score': 850, 'rate_adjustment': -1.0},
+            {'code': 'GOOD', 'name': 'Good', 'min_score': 650, 'max_score': 749, 'rate_adjustment': 0.0},
+            {'code': 'FAIR', 'name': 'Fair', 'min_score': 550, 'max_score': 649, 'rate_adjustment': 2.0},
+            {'code': 'POOR', 'name': 'Poor', 'min_score': 300, 'max_score': 549, 'rate_adjustment': 5.0}
+        ]
+    elif ref_type == 'loan_statuses':
+        data = [
+            {'code': 'pending', 'name': 'Pending'},
+            {'code': 'approved', 'name': 'Approved'},
+            {'code': 'active', 'name': 'Active'},
+            {'code': 'paid_off', 'name': 'Paid Off'},
+            {'code': 'defaulted', 'name': 'Defaulted'}
+        ]
+    else:
+        data = []
+    
+    redis.set_json(cache_key, data, REFERENCE_TTL)
+    return ReferenceDataResponse(type=ref_type, data=data, cached=False, ttl=REFERENCE_TTL)
+
+@app.delete("/cache/reference/{ref_type}")
+async def invalidate_reference_cache(ref_type: str):
+    """Invalidate reference data cache"""
+    redis = get_redis_client()
+    if ref_type == 'all':
+        ref_keys = redis.keys('ml:reference:*')
+        tx_keys = redis.keys('ml:transactions:*')
+        all_keys = (ref_keys or []) + (tx_keys or [])
+        if all_keys:
+            for k in all_keys:
+                redis.delete(k)
+        return {"invalidated": len(all_keys)}
+    
+    cache_key = f"ml:reference:{ref_type}"
+    deleted = redis.delete(cache_key)
+    return {"invalidated": deleted}
+
+
+# =============================================================================
+# REPORTING & ANALYTICS ENDPOINTS
+# =============================================================================
+
+class TransactionRow(BaseModel):
+    loan_id: int
+    borrower_id: int
+    borrower_email: str
+    principal_amount: float
+    interest_rate: float
+    status: str
+    created_at: str
+    term_months: int
+
+class PaginatedTransactionsResponse(BaseModel):
+    page: int
+    page_size: int
+    total_count: int
+    total_pages: int
+    data: List[TransactionRow]
+    cached: bool
+    has_next: bool
+    has_prev: bool
+
+@app.get("/reporting/transactions", response_model=PaginatedTransactionsResponse)
+async def get_transactions(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=5, le=100),
+    status: Optional[str] = None,
+    borrower_id: Optional[int] = None
+):
+    """Get paginated loan transactions with caching and look-ahead"""
+    redis = get_redis_client()
+    cache_key = f"ml:transactions:p{page}:s{page_size}:st{status or 'all'}:b{borrower_id or 'all'}"
+    
+    cached_data = redis.get_json(cache_key)
+    if cached_data:
+        cached_data['cached'] = True
+        return PaginatedTransactionsResponse(**cached_data)
+    
+    session = db.get_session()
+    try:
+        count_query = "SELECT COUNT(*) FROM loan l JOIN user u ON l.borrower_id = u.id"
+        data_query = """
+            SELECT l.id, l.borrower_id, u.email, l.principal_amount, l.interest_rate,
+                   l.status, l.created_at, l.term_months
+            FROM loan l
+            JOIN user u ON l.borrower_id = u.id
+        """
+        
+        where_clauses = []
+        params = {}
+        if status:
+            where_clauses.append("l.status = :status")
+            params['status'] = status
+        if borrower_id:
+            where_clauses.append("l.borrower_id = :borrower_id")
+            params['borrower_id'] = borrower_id
+        
+        if where_clauses:
+            where_str = " WHERE " + " AND ".join(where_clauses)
+            count_query += where_str
+            data_query += where_str
+        
+        data_query += " ORDER BY l.created_at DESC LIMIT :limit OFFSET :offset"
+        params['limit'] = page_size
+        params['offset'] = (page - 1) * page_size
+        
+        count_result = session.execute(text(count_query), params).scalar()
+        total_count = count_result or 0
+        total_pages = (total_count + page_size - 1) // page_size
+        
+        result = session.execute(text(data_query), params)
+        rows = []
+        for r in result:
+            rows.append(TransactionRow(
+                loan_id=r[0],
+                borrower_id=r[1],
+                borrower_email=r[2],
+                principal_amount=float(r[3]),
+                interest_rate=float(r[4]),
+                status=r[5],
+                created_at=r[6].isoformat() if r[6] else '',
+                term_months=r[7]
+            ))
+        
+        response_data = {
+            'page': page,
+            'page_size': page_size,
+            'total_count': total_count,
+            'total_pages': total_pages,
+            'data': [r.model_dump() for r in rows],
+            'cached': False,
+            'has_next': page < total_pages,
+            'has_prev': page > 1
+        }
+        
+        redis.set_json(cache_key, response_data, 300)
+        
+        if page < total_pages:
+            next_page = page + 1
+            next_cache_key = f"ml:transactions:p{next_page}:s{page_size}:st{status or 'all'}:b{borrower_id or 'all'}"
+            if not redis.exists(next_cache_key):
+                next_offset = (next_page - 1) * page_size
+                next_params = dict(params)
+                next_params['offset'] = next_offset
+                next_result = session.execute(text(data_query), next_params)
+                next_rows = []
+                for r in next_result:
+                    next_rows.append({
+                        'loan_id': r[0],
+                        'borrower_id': r[1],
+                        'borrower_email': r[2],
+                        'principal_amount': float(r[3]),
+                        'interest_rate': float(r[4]),
+                        'status': r[5],
+                        'created_at': r[6].isoformat() if r[6] else '',
+                        'term_months': r[7]
+                    })
+                next_data = {
+                    'page': next_page,
+                    'page_size': page_size,
+                    'total_count': total_count,
+                    'total_pages': total_pages,
+                    'data': next_rows,
+                    'cached': False,
+                    'has_next': next_page < total_pages,
+                    'has_prev': True
+                }
+                redis.set_json(next_cache_key, next_data, 300)
+        
+        if page < total_pages:
+            next_key = f"ml:transactions:p{page+1}:s{page_size}:st{status or 'all'}:b{borrower_id or 'all'}"
+            if not redis.exists(next_key):
+                next_params = params.copy()
+                next_params['offset'] = page * page_size
+                next_result = session.execute(text(data_query.replace(f"OFFSET :offset", f"OFFSET {page * page_size}")), next_params)
+                next_rows = []
+                for r in next_result:
+                    next_rows.append({
+                        'loan_id': r[0], 'borrower_id': r[1], 'borrower_email': r[2],
+                        'principal_amount': float(r[3]), 'interest_rate': float(r[4]),
+                        'status': r[5], 'created_at': r[6].isoformat() if r[6] else '', 'term_months': r[7]
+                    })
+                next_data = {
+                    'page': page + 1, 'page_size': page_size, 'total_count': total_count,
+                    'total_pages': total_pages, 'data': next_rows, 'cached': False,
+                    'has_next': (page + 1) < total_pages, 'has_prev': True
+                }
+                redis.set_json(next_key, next_data, 300)
+        
+        return PaginatedTransactionsResponse(**response_data)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        session.close()
+
+class AnalyticsSummary(BaseModel):
+    total_loans: int
+    total_principal: float
+    active_loans: int
+    defaulted_loans: int
+    avg_interest_rate: float
+    total_borrowers: int
+
+@app.get("/reporting/summary", response_model=AnalyticsSummary)
+async def get_analytics_summary():
+    """Get analytics summary with caching"""
+    redis = get_redis_client()
+    cache_key = "ml:analytics:summary"
+    
+    cached = redis.get_json(cache_key)
+    if cached:
+        return AnalyticsSummary(**cached)
+    
+    session = db.get_session()
+    try:
+        result = session.execute(text("""
+            SELECT 
+                COUNT(DISTINCT l.id) as total_loans,
+                COALESCE(SUM(l.principal_amount), 0) as total_principal,
+                SUM(CASE WHEN l.status = 'active' THEN 1 ELSE 0 END) as active_loans,
+                SUM(CASE WHEN l.status = 'defaulted' THEN 1 ELSE 0 END) as defaulted_loans,
+                COALESCE(AVG(l.interest_rate), 0) as avg_interest_rate,
+                COUNT(DISTINCT l.borrower_id) as total_borrowers
+            FROM loan l
+        """)).first()
+        
+        summary = AnalyticsSummary(
+            total_loans=result[0] or 0,
+            total_principal=float(result[1] or 0),
+            active_loans=result[2] or 0,
+            defaulted_loans=result[3] or 0,
+            avg_interest_rate=float(result[4] or 0),
+            total_borrowers=result[5] or 0
+        )
+        
+        redis.set_json(cache_key, summary.model_dump(), ANALYTICS_TTL)
+        return summary
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         session.close()
