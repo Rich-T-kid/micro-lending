@@ -43,17 +43,17 @@ class Extractor:
     def get_watermark(self, source: str, table: str) -> Optional[datetime]:
         with self.connection.cursor() as cursor:
             cursor.execute("""
-                SELECT last_value FROM etl_watermarks 
+                SELECT watermark_value FROM etl_watermarks 
                 WHERE source_name = %s AND table_name = %s
             """, (source, table))
             result = cursor.fetchone()
-            return result['last_value'] if result else None
+            return result['watermark_value'] if result else None
 
     def update_watermark(self, source: str, table: str, value: datetime, run_id: int):
         with self.connection.cursor() as cursor:
             cursor.execute("""
                 UPDATE etl_watermarks 
-                SET last_value = %s, last_run_id = %s, updated_at = NOW()
+                SET watermark_value = %s, last_run_id = %s, updated_at = NOW()
                 WHERE source_name = %s AND table_name = %s
             """, (value, run_id, source, table))
             self.connection.commit()
@@ -134,8 +134,8 @@ class Extractor:
 
     def extract_transactions(self, mode: str = 'full', watermark: datetime = None) -> ExtractResult:
         columns = """
-            id, wallet_id, from_wallet_id, to_wallet_id, amount, 
-            transaction_type, reference_id, reference_number, status, created_at
+            id, wallet_id, loan_id, transaction_type, amount, 
+            balance_before, balance_after, description, reference_number, created_at
         """
         if mode == 'incremental' and watermark:
             return self.extract_incremental('transaction_ledger', 'created_at', watermark, columns)
@@ -144,10 +144,10 @@ class Extractor:
     def extract_repayments(self, mode: str = 'full', watermark: datetime = None) -> ExtractResult:
         columns = """
             id, loan_id, installment_number, due_date, principal_amount,
-            interest_amount, total_amount, paid_amount, status, paid_at, created_at, updated_at
+            interest_amount, total_amount, paid_amount, status, paid_at, created_at
         """
         if mode == 'incremental' and watermark:
-            return self.extract_incremental('repayment_schedule', 'updated_at', watermark, columns)
+            return self.extract_incremental('repayment_schedule', 'created_at', watermark, columns)
         return self.extract_full('repayment_schedule', columns)
 
     def extract_reference_currencies(self) -> ExtractResult:

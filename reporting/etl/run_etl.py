@@ -216,7 +216,7 @@ class ETLOrchestrator:
         loader.connect()
         
         try:
-            results = loader.run_load(transform_results)
+            results = loader.run_load(transform_results, run_id=self.run_id)
             
             for name, result in results.items():
                 self.metrics['load'][name] = {

@@ -1,0 +1,3 @@
+2025-12-05 17:29:52,031 | INFO | etl_orchestrator | ETL Run 8 started (incremental mode)
+2025-12-05 17:29:52,031 | INFO | etl_orchestrator | Starting extract phase (incremental mode)
+2025-12-05 17:29:52,320 | ERROR | etl_orchestrator | ETL Run failed: (1064, "You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'FROM etl_watermarks \n                WHERE source_name = 'transaction_db' AND ta' at line 1")

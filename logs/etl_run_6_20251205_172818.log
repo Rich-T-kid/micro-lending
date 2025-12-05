@@ -1,0 +1,34 @@
+2025-12-05 17:28:18,705 | INFO | etl_orchestrator | ETL Run 6 started (full mode)
+2025-12-05 17:28:18,706 | INFO | etl_orchestrator | Starting extract phase (full mode)
+2025-12-05 17:28:18,825 | INFO | reporting.etl.extract | Full extract from user: 10 rows in 0.02s
+2025-12-05 17:28:18,847 | INFO | reporting.etl.extract | Full extract from loan: 27 rows in 0.02s
+2025-12-05 17:28:18,873 | INFO | reporting.etl.extract | Full extract from loan_application: 27 rows in 0.03s
+2025-12-05 17:28:18,895 | INFO | reporting.etl.extract | Full extract from transaction_ledger: 5 rows in 0.02s
+2025-12-05 17:28:18,921 | INFO | reporting.etl.extract | Full extract from repayment_schedule: 25 rows in 0.03s
+2025-12-05 17:28:18,939 | INFO | reporting.etl.extract | Full extract from ref_currency: 8 rows in 0.02s
+2025-12-05 17:28:18,961 | INFO | reporting.etl.extract | Full extract from ref_loan_product: 10 rows in 0.02s
+2025-12-05 17:28:18,983 | INFO | reporting.etl.extract | Full extract from ref_region: 14 rows in 0.02s
+2025-12-05 17:28:19,003 | INFO | reporting.etl.extract | Full extract from ref_credit_tier: 5 rows in 0.02s
+2025-12-05 17:28:19,068 | INFO | reporting.etl.extract | Extract complete: 158 total rows from 12 sources
+2025-12-05 17:28:21,081 | INFO | etl_orchestrator | Extract complete: 158 rows in 2.38s
+2025-12-05 17:28:21,081 | INFO | etl_orchestrator | Starting transform phase
+2025-12-05 17:28:21,083 | INFO | reporting.etl.transform | Transformed 10 users, rejected 0
+2025-12-05 17:28:21,084 | INFO | reporting.etl.transform | Transformed 27 loans, rejected 0
+2025-12-05 17:28:21,085 | INFO | reporting.etl.transform | Transform complete: 48 rows, 0 rejected
+2025-12-05 17:28:21,746 | INFO | etl_orchestrator | Transform complete: 48 rows in 0.66s
+2025-12-05 17:28:21,747 | INFO | etl_orchestrator | Starting load phase
+2025-12-05 17:28:21,855 | INFO | reporting.etl.load | Starting load phase using stored procedures
+2025-12-05 17:28:21,856 | INFO | reporting.etl.load | Loading dim_user...
+2025-12-05 17:28:22,337 | INFO | reporting.etl.load | Loaded dim_user: 0 inserted, 10 updated in 0.48s
+2025-12-05 17:28:22,338 | INFO | reporting.etl.load | Loading dim_loan_product...
+2025-12-05 17:28:22,379 | ERROR | reporting.etl.load | Error loading dim_loan_product: (1054, "Unknown column 'min_term_months' in 'field list'")
+2025-12-05 17:28:22,379 | INFO | reporting.etl.load | Loading fact_loan_transactions via stored procedure...
+2025-12-05 17:28:22,462 | INFO | reporting.etl.load | sp_etl_load_fact_transactions: Loaded 0 rows in 0.00 seconds
+2025-12-05 17:28:22,463 | INFO | reporting.etl.load | Refreshing fact_daily_portfolio via stored procedure...
+2025-12-05 17:28:22,523 | INFO | reporting.etl.load | sp_etl_refresh_portfolio_snapshot: Portfolio snapshot refreshed for 2025-12-05
+2025-12-05 17:28:22,523 | INFO | reporting.etl.load | Table dim_user: 0 inserted, 10 updated
+2025-12-05 17:28:22,523 | INFO | reporting.etl.load | Table dim_loan_product: 0 inserted, 0 updated
+2025-12-05 17:28:22,524 | WARNING | reporting.etl.load | Table fact_loan_transactions: status=success, message=None
+2025-12-05 17:28:22,524 | WARNING | reporting.etl.load | Table fact_daily_portfolio: status=success, message=None
+2025-12-05 17:28:23,239 | INFO | etl_orchestrator | Load complete: 11 rows in 1.49s
+2025-12-05 17:28:23,395 | INFO | etl_orchestrator | ETL Run 6 completed successfully

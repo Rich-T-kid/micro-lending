@@ -1,0 +1,17 @@
+2025-12-05 17:24:22,466 | INFO | etl_orchestrator | ETL Run 4 started (full mode)
+2025-12-05 17:24:22,466 | INFO | etl_orchestrator | Starting extract phase (full mode)
+2025-12-05 17:24:22,603 | INFO | reporting.etl.extract | Full extract from user: 10 rows in 0.02s
+2025-12-05 17:24:22,628 | INFO | reporting.etl.extract | Full extract from loan: 27 rows in 0.03s
+2025-12-05 17:24:22,655 | INFO | reporting.etl.extract | Full extract from loan_application: 27 rows in 0.03s
+2025-12-05 17:24:22,681 | INFO | reporting.etl.extract | Full extract from transaction_ledger: 5 rows in 0.03s
+2025-12-05 17:24:22,705 | INFO | reporting.etl.extract | Full extract from repayment_schedule: 25 rows in 0.02s
+2025-12-05 17:24:22,726 | INFO | reporting.etl.extract | Full extract from ref_currency: 8 rows in 0.02s
+2025-12-05 17:24:22,747 | INFO | reporting.etl.extract | Full extract from ref_loan_product: 10 rows in 0.02s
+2025-12-05 17:24:22,769 | INFO | reporting.etl.extract | Full extract from ref_region: 14 rows in 0.02s
+2025-12-05 17:24:22,789 | INFO | reporting.etl.extract | Full extract from ref_credit_tier: 5 rows in 0.02s
+2025-12-05 17:24:22,858 | INFO | reporting.etl.extract | Extract complete: 158 total rows from 12 sources
+2025-12-05 17:24:24,878 | INFO | etl_orchestrator | Extract complete: 158 rows in 2.41s
+2025-12-05 17:24:24,879 | INFO | etl_orchestrator | Starting transform phase
+2025-12-05 17:24:24,879 | INFO | reporting.etl.transform | Transformed 10 users, rejected 0
+2025-12-05 17:24:24,880 | INFO | reporting.etl.transform | Transformed 27 loans, rejected 0
+2025-12-05 17:24:25,030 | ERROR | etl_orchestrator | ETL Run failed: [<class 'decimal.ConversionSyntax'>]

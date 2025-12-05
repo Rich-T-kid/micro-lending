@@ -1,0 +1,16 @@
+2025-12-05 17:21:30,953 | INFO | etl_orchestrator | ETL Run 3 started (full mode)
+2025-12-05 17:21:30,954 | INFO | etl_orchestrator | Starting extract phase (full mode)
+2025-12-05 17:21:31,104 | INFO | reporting.etl.extract | Full extract from user: 10 rows in 0.03s
+2025-12-05 17:21:31,129 | INFO | reporting.etl.extract | Full extract from loan: 27 rows in 0.02s
+2025-12-05 17:21:31,157 | INFO | reporting.etl.extract | Full extract from loan_application: 27 rows in 0.03s
+2025-12-05 17:21:31,186 | INFO | reporting.etl.extract | Full extract from transaction_ledger: 5 rows in 0.03s
+2025-12-05 17:21:31,218 | INFO | reporting.etl.extract | Full extract from repayment_schedule: 25 rows in 0.03s
+2025-12-05 17:21:31,237 | INFO | reporting.etl.extract | Full extract from ref_currency: 8 rows in 0.02s
+2025-12-05 17:21:31,258 | INFO | reporting.etl.extract | Full extract from ref_loan_product: 10 rows in 0.02s
+2025-12-05 17:21:31,283 | INFO | reporting.etl.extract | Full extract from ref_region: 14 rows in 0.02s
+2025-12-05 17:21:31,303 | INFO | reporting.etl.extract | Full extract from ref_credit_tier: 5 rows in 0.02s
+2025-12-05 17:21:31,389 | INFO | reporting.etl.extract | Extract complete: 158 total rows from 12 sources
+2025-12-05 17:21:33,359 | INFO | etl_orchestrator | Extract complete: 158 rows in 2.41s
+2025-12-05 17:21:33,360 | INFO | etl_orchestrator | Starting transform phase
+2025-12-05 17:21:33,360 | INFO | reporting.etl.transform | Transformed 10 users, rejected 0
+2025-12-05 17:21:33,520 | ERROR | etl_orchestrator | ETL Run failed: unsupported operand type(s) for *: 'decimal.Decimal' and 'float'

@@ -1,4 +1,4 @@
-"""ETL Load Module - Loads transformed data into star schema."""
+"""ETL Load Module - Loads transformed data into star schema using stored procedures."""
 
 import logging
 from datetime import datetime
@@ -19,6 +19,8 @@ class LoadResult:
     load_time: float
     success: bool
     error: str = None
+    error_code: str = None
+    rows_rejected: int = 0
 
 
 class Loader:
@@ -42,44 +44,131 @@ class Loader:
         if self.connection:
             self.connection.close()
 
-    def truncate_table(self, table: str):
+    def validate_loan_record(self, loan_id: int, borrower_id: int, principal_amount: float,
+                             interest_rate: float, term_months: int, status: str) -> Tuple[bool, str, str]:
+        """Call sp_etl_validate_loan stored procedure to validate a loan record."""
         with self.connection.cursor() as cursor:
-            cursor.execute(f"TRUNCATE TABLE {table}")
-            self.connection.commit()
-
-    def get_next_key(self, table: str, key_column: str) -> int:
-        with self.connection.cursor() as cursor:
-            cursor.execute(f"SELECT COALESCE(MAX({key_column}), 0) + 1 as next_key FROM {table}")
+            cursor.execute("""
+                CALL sp_etl_validate_loan(%s, %s, %s, %s, %s, %s, @valid, @code, @msg)
+            """, (loan_id, borrower_id, principal_amount, interest_rate, term_months, status))
+            
+            cursor.execute("SELECT @valid as is_valid, @code as error_code, @msg as message")
             result = cursor.fetchone()
-            return result['next_key']
+            
+            is_valid = bool(result['is_valid'])
+            error_code = result['error_code']
+            error_message = result['message']
+            
+            return is_valid, error_code, error_message
 
-    def batch_insert(self, table: str, rows: List[Dict], columns: List[str]) -> Tuple[int, int]:
-        if not rows:
-            return 0, 0
+    def load_fact_transactions_via_sp(self, run_id: int) -> LoadResult:
+        """Load fact_loan_transactions using stored procedure sp_etl_load_fact_transactions."""
+        start_time = datetime.now()
         
-        placeholders = ', '.join(['%s'] * len(columns))
-        column_str = ', '.join(columns)
-        query = f"INSERT INTO {table} ({column_str}) VALUES ({placeholders})"
+        try:
+            with self.connection.cursor() as cursor:
+                # Call stored procedure
+                cursor.execute("""
+                    CALL sp_etl_load_fact_transactions(%s, %s, @rows_loaded, @rows_rejected, @status, @message)
+                """, (run_id, self.batch_size))
+                
+                # Get output parameters
+                cursor.execute("""
+                    SELECT @rows_loaded as rows_loaded, 
+                           @rows_rejected as rows_rejected,
+                           @status as status,
+                           @message as message
+                """)
+                result = cursor.fetchone()
+                
+                rows_loaded = int(result['rows_loaded'] or 0)
+                rows_rejected = int(result['rows_rejected'] or 0)
+                status = result['status']
+                message = result['message']
+                
+                duration = (datetime.now() - start_time).total_seconds()
+                
+                logger.info(f"sp_etl_load_fact_transactions: {message}")
+                
+                return LoadResult(
+                    table='fact_loan_transactions',
+                    rows_staged=rows_loaded + rows_rejected,
+                    rows_inserted=rows_loaded,
+                    rows_updated=0,
+                    rows_rejected=rows_rejected,
+                    load_time=duration,
+                    success=(status == 'success'),
+                    error=message if status != 'success' else None,
+                    error_code=status
+                )
+                
+        except pymysql.Error as e:
+            duration = (datetime.now() - start_time).total_seconds()
+            logger.error(f"Error calling sp_etl_load_fact_transactions: {e}")
+            return LoadResult(
+                table='fact_loan_transactions',
+                rows_staged=0,
+                rows_inserted=0,
+                rows_updated=0,
+                rows_rejected=0,
+                load_time=duration,
+                success=False,
+                error=str(e),
+                error_code='SQL_ERROR'
+            )
+
+    def refresh_portfolio_snapshot_via_sp(self, snapshot_date: datetime) -> LoadResult:
+        """Refresh fact_daily_portfolio using stored procedure sp_etl_refresh_portfolio_snapshot."""
+        start_time = datetime.now()
         
-        inserted = 0
-        failed = 0
-        
-        with self.connection.cursor() as cursor:
-            for i in range(0, len(rows), self.batch_size):
-                batch = rows[i:i + self.batch_size]
-                values = [tuple(row.get(col) for col in columns) for row in batch]
-                try:
-                    cursor.executemany(query, values)
-                    inserted += len(batch)
-                except pymysql.Error as e:
-                    logger.error(f"Batch insert failed: {e}")
-                    failed += len(batch)
-        
-        self.connection.commit()
-        return inserted, failed
+        try:
+            with self.connection.cursor() as cursor:
+                # Call stored procedure
+                cursor.execute("""
+                    CALL sp_etl_refresh_portfolio_snapshot(%s, @status, @message)
+                """, (snapshot_date.date(),))
+                
+                # Get output parameters
+                cursor.execute("SELECT @status as status, @message as message")
+                result = cursor.fetchone()
+                
+                status = result['status']
+                message = result['message']
+                
+                duration = (datetime.now() - start_time).total_seconds()
+                
+                logger.info(f"sp_etl_refresh_portfolio_snapshot: {message}")
+                
+                return LoadResult(
+                    table='fact_daily_portfolio',
+                    rows_staged=1,
+                    rows_inserted=1 if status == 'success' else 0,
+                    rows_updated=0,
+                    rows_rejected=0,
+                    load_time=duration,
+                    success=(status == 'success'),
+                    error=message if status != 'success' else None,
+                    error_code=status
+                )
+                
+        except pymysql.Error as e:
+            duration = (datetime.now() - start_time).total_seconds()
+            logger.error(f"Error calling sp_etl_refresh_portfolio_snapshot: {e}")
+            return LoadResult(
+                table='fact_daily_portfolio',
+                rows_staged=0,
+                rows_inserted=0,
+                rows_updated=0,
+                rows_rejected=0,
+                load_time=duration,
+                success=False,
+                error=str(e),
+                error_code='SQL_ERROR'
+            )
 
     def upsert_dimension(self, table: str, rows: List[Dict], key_column: str, 
                          natural_key: str, columns: List[str]) -> Tuple[int, int]:
+        """Generic dimension upsert with SCD Type 2 support."""
         if not rows:
             return 0, 0
         
@@ -95,7 +184,7 @@ class Loader:
                 existing = cursor.fetchone()
                 
                 if existing:
-                    update_cols = [c for c in columns if c not in [key_column, natural_key]]
+                    update_cols = [c for c in columns if c not in [key_column, natural_key, 'is_current']]
                     set_clause = ', '.join([f"{c} = %s" for c in update_cols])
                     values = [row.get(c) for c in update_cols]
                     values.append(existing[key_column])
@@ -106,6 +195,11 @@ class Loader:
                     )
                     updated += 1
                 else:
+                    # Get next surrogate key
+                    cursor.execute(f"SELECT COALESCE(MAX({key_column}), 0) + 1 as next_key FROM {table}")
+                    next_key = cursor.fetchone()['next_key']
+                    row[key_column] = next_key
+                    
                     placeholders = ', '.join(['%s'] * len(columns))
                     column_str = ', '.join(columns)
                     values = tuple(row.get(col) for col in columns)
@@ -120,9 +214,10 @@ class Loader:
         return inserted, updated
 
     def load_dim_user(self, rows: List[Dict]) -> LoadResult:
+        """Load dimension table dim_user."""
         start_time = datetime.now()
         columns = [
-            'user_id', 'email', 'full_name', 'role', 'credit_score', 'credit_tier',
+            'user_key', 'user_id', 'email', 'full_name', 'role', 'credit_score', 'credit_tier',
             'region_code', 'region_name', 'is_active', 'effective_date', 'expiry_date', 'is_current'
         ]
         
@@ -140,30 +235,31 @@ class Loader:
                 success=True
             )
         except pymysql.Error as e:
+            load_time = (datetime.now() - start_time).total_seconds()
+            logger.error(f"Error loading dim_user: {e}")
             return LoadResult(
                 table='dim_user',
                 rows_staged=len(rows),
                 rows_inserted=0,
                 rows_updated=0,
-                load_time=0,
+                load_time=load_time,
                 success=False,
                 error=str(e)
             )
 
     def load_dim_loan_product(self, rows: List[Dict]) -> LoadResult:
+        """Load dimension table dim_loan_product."""
         start_time = datetime.now()
         columns = [
-            'product_code', 'product_name', 'category', 'term_category',
-            'min_amount', 'max_amount', 'base_interest_rate', 'risk_tier',
+            'product_key', 'product_code', 'product_name', 'min_amount', 'max_amount',
+            'min_term_months', 'max_term_months', 'base_rate', 'is_active',
             'effective_date', 'expiry_date', 'is_current'
         ]
         
         try:
-            inserted, updated = self.upsert_dimension(
-                'dim_loan_product', rows, 'product_key', 'product_code', columns
-            )
+            inserted, updated = self.upsert_dimension('dim_loan_product', rows, 'product_key', 'product_code', columns)
             load_time = (datetime.now() - start_time).total_seconds()
-            logger.info(f"Loaded dim_loan_product: {inserted} inserted, {updated} updated")
+            logger.info(f"Loaded dim_loan_product: {inserted} inserted, {updated} updated in {load_time:.2f}s")
             
             return LoadResult(
                 table='dim_loan_product',
@@ -174,155 +270,49 @@ class Loader:
                 success=True
             )
         except pymysql.Error as e:
+            load_time = (datetime.now() - start_time).total_seconds()
+            logger.error(f"Error loading dim_loan_product: {e}")
             return LoadResult(
                 table='dim_loan_product',
                 rows_staged=len(rows),
                 rows_inserted=0,
                 rows_updated=0,
-                load_time=0,
-                success=False,
-                error=str(e)
-            )
-
-    def load_fact_loan_transactions(self, rows: List[Dict]) -> LoadResult:
-        start_time = datetime.now()
-        
-        try:
-            with self.connection.cursor() as cursor:
-                for row in rows:
-                    cursor.execute(
-                        "SELECT user_key FROM dim_user WHERE user_id = %s AND is_current = TRUE",
-                        (row['user_id'],)
-                    )
-                    user_result = cursor.fetchone()
-                    row['user_key'] = user_result['user_key'] if user_result else 1
-                    
-                    cursor.execute(
-                        "SELECT currency_key FROM dim_currency WHERE currency_code = %s",
-                        (row.get('currency_code', 'USD'),)
-                    )
-                    curr_result = cursor.fetchone()
-                    row['currency_key'] = curr_result['currency_key'] if curr_result else 1
-                    
-                    cursor.execute(
-                        "SELECT status_key FROM dim_loan_status WHERE status_code = %s",
-                        (row.get('status', 'active'),)
-                    )
-                    status_result = cursor.fetchone()
-                    row['status_key'] = status_result['status_key'] if status_result else 5
-                    
-                    cursor.execute(
-                        "SELECT product_key FROM dim_loan_product WHERE is_current = TRUE LIMIT 1"
-                    )
-                    product_result = cursor.fetchone()
-                    row['product_key'] = product_result['product_key'] if product_result else 1
-            
-            columns = [
-                'date_key', 'user_key', 'product_key', 'currency_key', 'status_key',
-                'loan_id', 'application_id', 'transaction_type', 'principal_amount',
-                'interest_amount', 'total_amount', 'amount_usd', 'interest_rate',
-                'term_months', 'outstanding_balance', 'fx_rate'
-            ]
-            
-            inserted, failed = self.batch_insert('fact_loan_transactions', rows, columns)
-            load_time = (datetime.now() - start_time).total_seconds()
-            logger.info(f"Loaded fact_loan_transactions: {inserted} rows in {load_time:.2f}s")
-            
-            return LoadResult(
-                table='fact_loan_transactions',
-                rows_staged=len(rows),
-                rows_inserted=inserted,
-                rows_updated=0,
                 load_time=load_time,
-                success=True
-            )
-        except pymysql.Error as e:
-            return LoadResult(
-                table='fact_loan_transactions',
-                rows_staged=len(rows),
-                rows_inserted=0,
-                rows_updated=0,
-                load_time=0,
                 success=False,
                 error=str(e)
             )
 
-    def load_fact_daily_portfolio(self, row: Dict) -> LoadResult:
-        start_time = datetime.now()
-        
-        try:
-            with self.connection.cursor() as cursor:
-                cursor.execute(
-                    "DELETE FROM fact_daily_portfolio WHERE date_key = %s",
-                    (row['date_key'],)
-                )
-                
-                columns = [
-                    'date_key', 'total_users', 'active_borrowers', 'active_lenders',
-                    'total_loans', 'active_loans', 'total_principal', 'total_outstanding',
-                    'total_repaid', 'loans_originated_today', 'amount_originated_today',
-                    'payments_received_today', 'loans_defaulted', 'loans_paid_off',
-                    'default_rate', 'delinquency_rate', 'avg_loan_size',
-                    'avg_interest_rate', 'weighted_avg_credit_score'
-                ]
-                
-                placeholders = ', '.join(['%s'] * len(columns))
-                column_str = ', '.join(columns)
-                values = tuple(row.get(col) for col in columns)
-                
-                cursor.execute(
-                    f"INSERT INTO fact_daily_portfolio ({column_str}) VALUES ({placeholders})",
-                    values
-                )
-                self.connection.commit()
-            
-            load_time = (datetime.now() - start_time).total_seconds()
-            logger.info(f"Loaded fact_daily_portfolio snapshot for date_key {row['date_key']}")
-            
-            return LoadResult(
-                table='fact_daily_portfolio',
-                rows_staged=1,
-                rows_inserted=1,
-                rows_updated=0,
-                load_time=load_time,
-                success=True
-            )
-        except pymysql.Error as e:
-            return LoadResult(
-                table='fact_daily_portfolio',
-                rows_staged=1,
-                rows_inserted=0,
-                rows_updated=0,
-                load_time=0,
-                success=False,
-                error=str(e)
-            )
-
-    def run_load(self, transform_results: Dict) -> Dict[str, LoadResult]:
+    def run_load(self, transform_results: Dict, run_id: int = 0) -> Dict[str, LoadResult]:
+        """
+        Run the complete load process.
+        Calls stored procedures for fact tables and direct SQL for dimensions.
+        Returns status and error codes from stored procedures.
+        """
         results = {}
         
-        # Load dimensions first
+        logger.info("Starting load phase using stored procedures")
+        
+        # Load dimension tables first (these use direct SQL with validation)
         if 'dim_user' in transform_results:
+            logger.info("Loading dim_user...")
             results['dim_user'] = self.load_dim_user(transform_results['dim_user'].rows)
         
         if 'dim_loan_product' in transform_results:
-            results['dim_loan_product'] = self.load_dim_loan_product(
-                transform_results['dim_loan_product'].rows
-            )
+            logger.info("Loading dim_loan_product...")
+            results['dim_loan_product'] = self.load_dim_loan_product(transform_results['dim_loan_product'].rows)
         
-        # Load facts
-        if 'fact_loan_transactions' in transform_results:
-            results['fact_loan_transactions'] = self.load_fact_loan_transactions(
-                transform_results['fact_loan_transactions'].rows
-            )
+        # Load fact tables using stored procedures
+        logger.info("Loading fact_loan_transactions via stored procedure...")
+        results['fact_loan_transactions'] = self.load_fact_transactions_via_sp(run_id)
         
-        if 'fact_daily_portfolio' in transform_results:
-            rows = transform_results['fact_daily_portfolio'].rows
-            if rows:
-                results['fact_daily_portfolio'] = self.load_fact_daily_portfolio(rows[0])
+        logger.info("Refreshing fact_daily_portfolio via stored procedure...")
+        results['fact_daily_portfolio'] = self.refresh_portfolio_snapshot_via_sp(datetime.now())
         
-        total_inserted = sum(r.rows_inserted for r in results.values())
-        total_updated = sum(r.rows_updated for r in results.values())
-        logger.info(f"Load complete: {total_inserted} inserted, {total_updated} updated")
+        # Log summary with status codes
+        for table_name, result in results.items():
+            if result.error_code:
+                logger.warning(f"Table {table_name}: status={result.error_code}, message={result.error}")
+            else:
+                logger.info(f"Table {table_name}: {result.rows_inserted} inserted, {result.rows_updated} updated")
         
         return results

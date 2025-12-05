@@ -1,0 +1,6 @@
+2025-12-05 17:16:31,377 | INFO | etl_orchestrator | ETL Run 2 started (full mode)
+2025-12-05 17:16:31,378 | INFO | etl_orchestrator | Starting extract phase (full mode)
+2025-12-05 17:16:31,517 | INFO | reporting.etl.extract | Full extract from user: 10 rows in 0.03s
+2025-12-05 17:16:31,541 | INFO | reporting.etl.extract | Full extract from loan: 27 rows in 0.02s
+2025-12-05 17:16:31,577 | INFO | reporting.etl.extract | Full extract from loan_application: 27 rows in 0.04s
+2025-12-05 17:16:31,772 | ERROR | etl_orchestrator | ETL Run failed: (1054, "Unknown column 'from_wallet_id' in 'field list'")

@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, date
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass, field
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 logger = logging.getLogger(__name__)
 
@@ -149,6 +149,15 @@ class Transformer:
             return 'Fair'
         return 'Poor'
 
+    def safe_decimal(self, value: Any, default: float = 0.0) -> Decimal:
+        """Safely convert a value to Decimal, handling None and invalid values."""
+        if value is None:
+            return Decimal(str(default))
+        try:
+            return Decimal(str(value))
+        except (ValueError, TypeError, InvalidOperation):
+            return Decimal(str(default))
+
     def get_term_category(self, term_months: int) -> str:
         if term_months is None:
             return 'unknown'
@@ -251,7 +260,8 @@ class Transformer:
             
             principal = Decimal(str(loan['principal_amount']))
             interest_rate = Decimal(str(loan['interest_rate']))
-            interest_amount = principal * (interest_rate / 100) * (loan['term_months'] / 12)
+            term_months = Decimal(str(loan['term_months']))
+            interest_amount = principal * (interest_rate / Decimal('100')) * (term_months / Decimal('12'))
             
             transformed.append({
                 'loan_id': loan['id'],
@@ -324,9 +334,9 @@ class Transformer:
         defaulted_loans = len([l for l in loans if l.get('status') == 'defaulted'])
         paid_off_loans = len([l for l in loans if l.get('status') == 'paid_off'])
         
-        total_principal = sum(Decimal(str(l.get('principal_amount', 0))) for l in loans)
+        total_principal = sum(self.safe_decimal(l.get('principal_amount'), 0) for l in loans)
         total_outstanding = sum(
-            Decimal(str(l.get('outstanding_balance', 0))) 
+            self.safe_decimal(l.get('outstanding_balance'), 0) 
             for l in loans if l.get('status') == 'active'
         )
         total_repaid = total_principal - total_outstanding
@@ -334,10 +344,10 @@ class Transformer:
         default_rate = defaulted_loans / total_loans if total_loans > 0 else 0
         avg_loan_size = total_principal / total_loans if total_loans > 0 else 0
         
-        interest_rates = [l.get('interest_rate', 0) for l in loans if l.get('interest_rate')]
-        avg_interest = sum(interest_rates) / len(interest_rates) if interest_rates else 0
+        interest_rates = [self.safe_decimal(l.get('interest_rate'), 0) for l in loans if l.get('interest_rate') is not None]
+        avg_interest = sum(interest_rates) / len(interest_rates) if interest_rates else Decimal('0')
         
-        credit_scores = [u.get('credit_score') for u in users if u.get('credit_score')]
+        credit_scores = [u.get('credit_score') for u in users if u.get('credit_score') is not None]
         avg_credit = sum(credit_scores) / len(credit_scores) if credit_scores else 0
         
         return {
@@ -357,8 +367,8 @@ class Transformer:
             'loans_paid_off': paid_off_loans,
             'default_rate': round(default_rate, 4),
             'delinquency_rate': Decimal('0'),
-            'avg_loan_size': round(avg_loan_size, 2),
-            'avg_interest_rate': round(avg_interest, 2),
+            'avg_loan_size': round(float(avg_loan_size), 2),
+            'avg_interest_rate': round(float(avg_interest), 2),
             'weighted_avg_credit_score': round(avg_credit, 1)
         }
 
