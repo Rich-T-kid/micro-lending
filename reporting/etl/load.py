@@ -369,6 +369,59 @@ class Loader:
                 error_code='SQL_ERROR'
             )
 
+    def load_facts_from_staging_via_sp(self, run_id: int) -> LoadResult:
+        """Load fact_loan_transactions from staging using stored procedure."""
+        start_time = datetime.now()
+        
+        try:
+            with self.connection.cursor() as cursor:
+                cursor.execute("""
+                    CALL sp_etl_load_facts_from_staging(%s, %s, @rows_loaded, @rows_rejected, @status, @message)
+                """, (run_id, self.batch_size))
+                
+                cursor.execute("""
+                    SELECT @rows_loaded as rows_loaded,
+                           @rows_rejected as rows_rejected,
+                           @status as status,
+                           @message as message
+                """)
+                result = cursor.fetchone()
+                
+                rows_loaded = int(result['rows_loaded'] or 0)
+                rows_rejected = int(result['rows_rejected'] or 0)
+                status = result['status']
+                message = result['message']
+                
+                duration = (datetime.now() - start_time).total_seconds()
+                
+                logger.info(f"sp_etl_load_facts_from_staging: {message}")
+                
+                return LoadResult(
+                    table='fact_loan_transactions',
+                    rows_staged=rows_loaded + rows_rejected,
+                    rows_inserted=rows_loaded,
+                    rows_updated=0,
+                    rows_rejected=rows_rejected,
+                    load_time=duration,
+                    success=(status == 'success'),
+                    error=message if status != 'success' else None,
+                    error_code=status
+                )
+        except pymysql.Error as e:
+            duration = (datetime.now() - start_time).total_seconds()
+            logger.error(f"Error calling sp_etl_load_facts_from_staging: {e}")
+            return LoadResult(
+                table='fact_loan_transactions',
+                rows_staged=0,
+                rows_inserted=0,
+                rows_updated=0,
+                rows_rejected=0,
+                load_time=duration,
+                success=False,
+                error=str(e),
+                error_code='SQL_ERROR'
+            )
+
     def refresh_portfolio_snapshot_via_sp(self, snapshot_date: datetime) -> LoadResult:
         """Refresh fact_daily_portfolio using stored procedure."""
         start_time = datetime.now()
@@ -651,8 +704,29 @@ class Loader:
         if 'dim_loan_product' in transform_results:
             results['dim_loan_product'] = self.load_dim_loan_product(transform_results['dim_loan_product'].rows)
         
+        # Stage fact rows before loading from staging via stored procedure
+        if 'fact_loan_transactions' in transform_results:
+            staged_count, stage_time, stage_method = self.bulk_stage_loans(
+                transform_results['fact_loan_transactions'].rows, run_id
+            )
+            logger.info(f"Staged {staged_count} fact_loan_transactions rows via {stage_method} in {stage_time:.3f}s")
+            results['fact_loan_transactions_stage'] = LoadResult(
+                table='etl_staging_loan',
+                rows_staged=staged_count,
+                rows_inserted=staged_count,
+                rows_updated=0,
+                load_time=stage_time,
+                success=True,
+                rows_per_second=staged_count / stage_time if stage_time > 0 else 0,
+                batch_size_used=self.batch_size,
+                load_method=stage_method
+            )
+            # Validate staging data
+            validation = self.validate_staging_via_sp(run_id)
+            logger.info(f"Staging validation: {validation}")
+        
         # Load fact tables via stored procedures
-        results['fact_loan_transactions'] = self.load_fact_transactions_via_sp(run_id)
+        results['fact_loan_transactions'] = self.load_facts_from_staging_via_sp(run_id)
         results['fact_daily_portfolio'] = self.refresh_portfolio_snapshot_via_sp(datetime.now())
         
         # Summary

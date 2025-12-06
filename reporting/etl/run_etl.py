@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from reporting.etl.extract import Extractor, ExtractResult
 from reporting.etl.transform import Transformer, TransformResult
 from reporting.etl.load import Loader, LoadResult
-from reporting.etl.logging_config import ETLLogger, ETLMetrics
+from reporting.etl.logging_config import create_etl_logger, ETLLogger, ETLMetrics
 
 LOG_DIR = Path(__file__).parent.parent.parent / 'logs'
 LOG_DIR.mkdir(exist_ok=True)
@@ -264,6 +264,30 @@ class ETLOrchestrator:
                     status, result.rows_inserted + result.rows_updated,
                     result.load_time, result.error
                 )
+                
+                if self.etl_logger:
+                    m = ETLMetrics(
+                        rows_processed=result.rows_inserted + result.rows_updated + result.rows_rejected,
+                        rows_success=result.rows_inserted + result.rows_updated,
+                        rows_failed=result.rows_rejected,
+                        duration_seconds=result.load_time
+                    )
+                    self.etl_logger.log_step_to_db(
+                        step_name=f'load_{name}',
+                        step_type='load',
+                        source='staging',
+                        target=result.table,
+                        status=status,
+                        metrics=m,
+                        error=result.error
+                    )
+                    if result.error:
+                        self.etl_logger.log_error_to_db(
+                            error_type='LOAD_ERROR',
+                            error_code=result.error_code or 'LOAD_FAILED',
+                            message=result.error,
+                            source_table=result.table
+                        )
             
             duration = (datetime.now() - start_time).total_seconds()
             total_loaded = sum(r.rows_inserted + r.rows_updated for r in results.values())
@@ -279,6 +303,8 @@ class ETLOrchestrator:
         try:
             self.run_id = self.start_run()
             self.logger = setup_logging(self.run_id)
+            if self.etl_logger:
+                self.etl_logger.info(f"ETL Run {self.run_id} started ({self.mode} mode)", step='run')
             self.logger.info(f"ETL Run {self.run_id} started ({self.mode} mode)")
             
             extract_results = self.run_extract()

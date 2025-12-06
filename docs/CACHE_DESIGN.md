@@ -156,6 +156,11 @@ redis-cli INFO memory | grep used_memory_human
 
 We also log cache hits/misses in the application logs so we can see which keys are being accessed most.
 
+## Logging & Exceptions
+- Cache endpoints log hits/misses with latency for reference data and paged transactions.
+- Redis client catches connection/timeouts and falls back to DB, logging errors with key context.
+- Metrics API (`/cache/metrics`) exposes hit ratio, avg cache vs DB latency, and errors/minute; hourly view available via `/cache/metrics/hourly`.
+
 ---
 
 ## Demo Flow

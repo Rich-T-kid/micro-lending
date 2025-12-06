@@ -333,6 +333,20 @@ curl -s http://localhost:8000/cache/reference/currencies | python3 -m json.tool
 ```
 Look for: `"cached": false` (fresh load)
 
+### Step 9.4: Add New Reference Data and Verify Refresh
+```bash
+# Insert a new currency (example)
+mysql -h $MYSQL_HOST -u $MYSQL_USER -p$MYSQL_PASSWORD $MYSQL_DATABASE \
+  -e "INSERT INTO ref_currency (currency_code, currency_name, symbol) VALUES ('ZAR','South African Rand','R')"
+
+# Invalidate currencies cache
+curl -X DELETE http://localhost:8000/cache/reference/currencies
+
+# Re-fetch (should miss cache and include ZAR)
+curl -s http://localhost:8000/cache/reference/currencies | python3 -m json.tool
+```
+Look for: `"cached": false` and a record with `"code": "ZAR"` in the response.
+
 ---
 
 ## REQUIREMENT 10: PAGED GRID WITH LOOK-AHEAD CACHING

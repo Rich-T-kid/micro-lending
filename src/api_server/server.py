@@ -2646,6 +2646,7 @@ async def get_reference_data(ref_type: str):
         # Record cache hit with latency
         if metrics:
             metrics.record_hit(operation=f'reference:{ref_type}', latency_ms=latency_ms)
+        logging.getLogger("cache").info(f"HIT {cache_key} ttl={ttl}s in {latency_ms:.2f}ms")
         return ReferenceDataResponse(type=ref_type, data=cached_data, cached=True, ttl=ttl, latency_ms=round(latency_ms, 2))
     
     # Cache miss - load from database reference tables
@@ -2708,6 +2709,7 @@ async def get_reference_data(ref_type: str):
     # Record cache miss with DB latency
     if metrics:
         metrics.record_miss(operation=f'reference:{ref_type}', latency_ms=latency_ms)
+    logging.getLogger("cache").info(f"MISS {cache_key} loaded from DB in {latency_ms:.2f}ms ttl={REFERENCE_TTL}s")
     return ReferenceDataResponse(type=ref_type, data=data, cached=False, ttl=REFERENCE_TTL, latency_ms=round(latency_ms, 2))
 
 @app.delete("/cache/reference/{ref_type}")
@@ -2825,6 +2827,7 @@ async def get_transactions(
         # Record cache hit
         if metrics:
             metrics.record_hit(operation='transactions', latency_ms=latency_ms)
+        logging.getLogger("cache").info(f"HIT {cache_key} in {latency_ms:.2f}ms")
         return PaginatedTransactionsResponse(**cached_data)
     
     session = db.get_session()
@@ -2888,6 +2891,7 @@ async def get_transactions(
         # Record cache miss with DB latency
         if metrics:
             metrics.record_miss(operation='transactions', latency_ms=response_data['latency_ms'])
+        logging.getLogger("cache").info(f"MISS {cache_key} loaded from DB in {response_data['latency_ms']:.2f}ms ttl=300s")
         
         redis.set_json(cache_key, response_data, 300)
         
