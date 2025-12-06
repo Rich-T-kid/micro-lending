@@ -1,6 +1,6 @@
 FINAL PROJECT SUBMISSION LOG
 MicroLending Analytics Platform
-Generated: 2025-12-05 21:13:29
+Generated: 2025-12-05 23:07:53
 Students: Saksham Mehta, Jose Lamela, Richard Baah
 
 This log demonstrates all required Final Project features:
@@ -315,7 +315,7 @@ Requirement: Run Redis under Docker
 --- 7.1 Docker Container Status ---
 Command: docker ps --filter name=redis
 NAMES                IMAGE            STATUS                    PORTS
-microlending-redis   redis:7-alpine   Up 10 minutes (healthy)   0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
+microlending-redis   redis:7-alpine   Up 41 minutes (healthy)   0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
 
 --- 7.2 Redis Connection Test ---
 Command: redis-cli ping
@@ -379,7 +379,7 @@ Requirement: Invalidate cache when reference data changes
 
 --- 9.1 Invalidate All Reference Cache ---
 Endpoint: DELETE /cache/reference/all
-{"invalidated":3}
+{"invalidated":1}
 
 --- 9.2 Verify Cache Cleared ---
 Command: redis-cli KEYS 'ml:reference:*'
@@ -404,8 +404,8 @@ Has Next Page: True
 
 --- 10.2 Verify Look-Ahead Pre-cached Page 2 ---
 Command: redis-cli KEYS 'ml:transactions:*'
-ml:transactions:p1:s10:stall:ball
 ml:transactions:p2:s10:stall:ball
+ml:transactions:p1:s10:stall:ball
 
 Result: Both page 1 and page 2 should be cached
 
@@ -427,15 +427,15 @@ Reference Data (1 hour = 3600s):
   ml:reference:currencies TTL: 3600s
 
 Transaction Pages (5 min = 300s):
-  ml:transactions:p1:s10:stall:ball TTL: 300s
   ml:transactions:p2:s10:stall:ball TTL: 300s
+  ml:transactions:p1:s10:stall:ball TTL: 300s
 
 --- 11.2 Redis Memory Stats ---
-used_memory_human:1.36M
+used_memory_human:1.32M
 
 --- 11.3 Cache Hit/Miss Stats (Redis Server) ---
-keyspace_hits:44
-keyspace_misses:30
+keyspace_hits:90
+keyspace_misses:27
 
 
 12. PERSISTED CACHE METRICS (TIME-SERIES STORE)
@@ -446,78 +446,134 @@ Requirement: Metrics persisted to store (hit ratio, latency, errors per minute)
 Endpoint: GET /cache/metrics
 
 === Current Minute Stats ===
-Timestamp: 2025-12-05T21:13:34.297641
-Minute Bucket: 202512052113
+Timestamp: 2025-12-05T23:07:57.890895
+Minute Bucket: 202512052307
 
 Current Minute:
-  Hits: 6
-  Misses: 6
+  Hits: 4
+  Misses: 5
   Errors: 0
-  Total Requests: 12
-  Hit Ratio: 50.0%
+  Total Requests: 9
+  Hit Ratio: 44.44%
 
 All-Time Totals:
-  Total Hits: 9
-  Total Misses: 9
+  Total Hits: 73
+  Total Misses: 39
   Total Errors: 0
-  Total Requests: 18
-  Overall Hit Ratio: 50.0%
+  Total Requests: 112
+  Overall Hit Ratio: 65.18%
 
 Latency Comparison:
-  Avg Cache Latency: 0.89ms
-  Avg DB Latency: 83.72ms
-  Cache Speedup: 94.07x faster
+  Avg Cache Latency: 1.22ms
+  Avg DB Latency: 52.69ms
+  Cache Speedup: 43.19x faster
 
 Errors Per Minute: 0
 
 --- 12.2 Persisted Metrics Keys in Redis ---
 Command: redis-cli KEYS 'ml:metrics:*'
-ml:metrics:invalidations:minute:202512052103
-ml:metrics:invalidations:total
-ml:metrics:hits:minute:202512052103
-ml:metrics:misses:hour:2025120521
-ml:metrics:latency:cache:202512052103
-ml:metrics:misses:minute:202512052103
-ml:metrics:hits:hour:2025120521
-ml:metrics:invalidations:minute:202512052113
-ml:metrics:misses:total
-ml:metrics:latency:db:202512052113
+ml:metrics:latency:cache:202512052231
+ml:metrics:hits:hour:2025120523
+ml:metrics:hits:minute:202512052229
+ml:metrics:latency:cache:202512052123
+ml:metrics:misses:minute:202512052233
+ml:metrics:hits:minute:202512052230
+ml:metrics:hits:minute:202512052307
 ml:metrics:hits:total
-ml:metrics:latency:cache:202512052113
+ml:metrics:invalidations:minute:202512052103
+ml:metrics:latency:db:202512052227
+ml:metrics:invalidations:minute:202512052307
+ml:metrics:hits:hour:2025120522
+ml:metrics:misses:minute:202512052141
+ml:metrics:latency:cache:202512052142
+ml:metrics:misses:hour:2025120523
+ml:metrics:invalidations:minute:202512052141
+ml:metrics:invalidations:total
+ml:metrics:latency:cache:202512052307
+ml:metrics:latency:db:202512052235
+ml:metrics:latency:db:202512052307
 ml:metrics:latency:db:202512052103
+ml:metrics:latency:cache:202512052233
+ml:metrics:latency:db:202512052113
+ml:metrics:latency:db:202512052232
+ml:metrics:latency:db:202512052142
+ml:metrics:latency:cache:202512052235
+ml:metrics:latency:cache:202512052229
+ml:metrics:hits:minute:202512052306
+ml:metrics:hits:hour:2025120521
+ml:metrics:latency:cache:202512052113
+ml:metrics:misses:minute:202512052307
+ml:metrics:misses:hour:2025120522
+ml:metrics:hits:minute:202512052141
+ml:metrics:latency:cache:202512052141
+ml:metrics:latency:cache:202512052230
+ml:metrics:latency:db:202512052233
+ml:metrics:hits:minute:202512052103
+ml:metrics:latency:cache:202512052232
+ml:metrics:misses:minute:202512052103
+ml:metrics:hits:minute:202512052227
+ml:metrics:misses:minute:202512052232
+ml:metrics:hits:minute:202512052231
+ml:metrics:invalidations:minute:202512052233
+ml:metrics:misses:minute:202512052306
+ml:metrics:latency:db:202512052141
+ml:metrics:hits:minute:202512052123
+ml:metrics:hits:minute:202512052235
+ml:metrics:misses:minute:202512052227
+ml:metrics:hits:minute:202512052233
 ml:metrics:misses:minute:202512052113
+ml:metrics:latency:cache:202512052227
+ml:metrics:misses:minute:202512052235
+ml:metrics:invalidations:minute:202512052235
 ml:metrics:hits:minute:202512052113
+ml:metrics:misses:total
+ml:metrics:hits:minute:202512052142
+ml:metrics:hits:minute:202512052232
+ml:metrics:misses:minute:202512052142
+ml:metrics:latency:cache:202512052103
+ml:metrics:latency:cache:202512052306
+ml:metrics:latency:db:202512052306
+ml:metrics:invalidations:minute:202512052113
+ml:metrics:misses:hour:2025120521
 
 --- 12.3 Hit Counts by Operation (Total) ---
 Command: redis-cli HGETALL 'ml:metrics:hits:total'
 reference:currencies
-3
+26
 transactions
-6
+23
+reference:loan_types
+12
+reference:regions
+12
 
 --- 12.4 Miss Counts by Operation (Total) ---
 Command: redis-cli HGETALL 'ml:metrics:misses:total'
 reference:currencies
-6
+14
 transactions
-3
+15
+reference:loan_types
+5
+reference:regions
+5
 
 --- 12.5 Hourly Metrics (Last 3 Hours) ---
 Endpoint: GET /cache/metrics/hourly?hours=3
 
 Hours Requested: 3
 
+Hour 2025120523:
+  Requests: 13 | Hits: 7 | Misses: 6
+  Hit Ratio: 53.85% | Error Rate: 0.0%
+
+Hour 2025120522:
+  Requests: 53 | Hits: 38 | Misses: 15
+  Hit Ratio: 71.7% | Error Rate: 0.0%
+
 Hour 2025120521:
-  Requests: 18 | Hits: 9 | Misses: 9
-  Hit Ratio: 50.0% | Error Rate: 0.0%
-
-Hour 2025120520:
-  Requests: 0 | Hits: 0 | Misses: 0
-  Hit Ratio: 0% | Error Rate: 0%
-
-Hour 2025120519:
-  Requests: 0 | Hits: 0 | Misses: 0
-  Hit Ratio: 0% | Error Rate: 0%
+  Requests: 46 | Hits: 28 | Misses: 18
+  Hit Ratio: 60.87% | Error Rate: 0.0%
 
 
 

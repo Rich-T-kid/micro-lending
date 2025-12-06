@@ -1,14 +1,22 @@
-# Cache Design
+# Cache Design Document
 
 ## MicroLending Platform
 Saksham Mehta, Jose Lamela, Richard Baah  
-December 2025
+5th December 2025
+
+---
+
+## Introduction
+
+This document describes our Redis caching implementation for the MicroLending analytics platform. We use caching to speed up the GUI—dropdown menus load from cache instead of hitting the database every time, and the data grid uses look-ahead paging to make scrolling feel instant.
+
+The cache is a performance optimization, not a requirement for the app to function. If Redis goes down, everything still works; it just falls back to database queries.
 
 ---
 
 ## Redis Setup
 
-We're running Redis in Docker using the official Alpine image. The docker-compose.yml is pretty simple:
+We run Redis in Docker using the official Alpine image. Here's our docker-compose configuration:
 
 ```yaml
 services:
@@ -23,155 +31,323 @@ services:
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
+      timeout: 5s
+      retries: 3
 ```
 
-We went with Alpine because the image is tiny. The appendonly flag gives us persistence so cached data survives restarts. To start it up: `docker-compose up -d`
+A few notes on these choices:
+- **Alpine image** — It's tiny (~7MB) and has everything we need. No point using the full Debian-based image.
+- **appendonly yes** — This enables Redis persistence. Without it, cached data would be lost on restart. With AOF (append-only file), Redis logs every write and can recover data after a crash.
+- **Health check** — Docker uses this to know if Redis is actually ready, not just running.
+
+To start: `docker-compose up -d`
 
 ---
 
-## Caching Pattern
+## Caching Pattern: Cache-Aside
 
-We use cache-aside (also called lazy loading). The idea is simple:
+We use the cache-aside pattern (also called lazy loading). The flow is:
 
-1. Check Redis first
-2. If it's there, return it
-3. If not, get it from the database, store it in Redis, then return it
-
-```python
-def get_or_set(self, key, fetch_fn, ttl):
-    cached = redis.get_json(key)
-    if cached is not None:
-        return cached  # cache hit
-    
-    # cache miss - go to database
-    data = fetch_fn()
-    if data is not None:
-        redis.set_json(key, data, ttl)
-    return data
+```
+1. Application receives request
+2. Check Redis for cached data
+3. If found (cache HIT) → return cached data
+4. If not found (cache MISS):
+   a. Query the database
+   b. Store result in Redis with TTL
+   c. Return data to caller
 ```
 
-We chose this over write-through because it's simpler and our data is mostly read-heavy. The analytics dashboard gets hit way more than data gets updated.
+In code:
 
-The nice thing about cache-aside is if Redis dies, the app still works—it just gets everything from the database (slower but functional).
+```python
+def get_reference_data(ref_type):
+    cache_key = f"ml:reference:{ref_type}"
+    
+    # Check cache first
+    cached = redis.get_json(cache_key)
+    if cached is not None:
+        return {"data": cached, "cached": True}
+    
+    # Cache miss - load from database
+    data = load_from_database(ref_type)
+    
+    # Store in cache for next time
+    redis.set_json(cache_key, data, ttl=3600)
+    
+    return {"data": data, "cached": False}
+```
+
+### Why Cache-Aside?
+
+We considered write-through caching (update cache on every database write) but rejected it:
+- Our data is read-heavy. The analytics dashboard gets way more reads than writes.
+- Write-through adds complexity to every write operation.
+- With cache-aside, the cache populates itself on first read. Simple and automatic.
+
+The tradeoff is that the first request after cache expiration is slower (has to hit the database). But subsequent requests are fast, which is what matters for a dashboard that gets refreshed constantly.
 
 ---
 
 ## Key Structure
 
-All our keys follow the pattern `ml:{type}:{identifier}`. Examples:
-- `ml:reference:currencies` — list of currencies for dropdown
-- `ml:reference:loan_types` — loan product types
-- `ml:transactions:p1:s10:stall:ball` — page 1 of transactions, 10 per page
+All cache keys follow a consistent naming pattern:
 
-Values are stored as JSON strings. We could use Redis hashes or something fancier, but JSON is easy to debug (you can just redis-cli GET the key and read it) and Python's json module handles everything.
+```
+ml:{category}:{identifier}
+```
+
+For example, `ml:reference:currencies` holds the list of currencies for dropdowns, `ml:reference:loan_types` has the loan product types, and `ml:reference:regions` stores geographic regions. For paginated transaction data, we use keys like `ml:transactions:p1:s10` (page 1, 10 items per page) and `ml:transactions:p2:s10` (page 2, same page size).
+
+The prefix `ml:` (for microlending) namespaces our keys so they don't collide with anything else that might be in the same Redis instance.
+
+### Value Format
+
+Values are stored as JSON strings. We use Python's json module for serialization:
+
+```python
+def set_json(self, key, data, ttl):
+    json_str = json.dumps(data)
+    self.redis.setex(key, ttl, json_str)
+
+def get_json(self, key):
+    json_str = self.redis.get(key)
+    if json_str is None:
+        return None
+    return json.loads(json_str)
+```
+
+We could use Redis hashes or sorted sets for more complex data, but JSON strings have a big advantage: they're human-readable. You can debug by just running `redis-cli GET ml:reference:currencies` and reading the output.
 
 ---
 
-## TTLs
+## TTL Strategy
 
-Different data gets different expiration times:
+Different types of data get different expiration times based on how often they change. Reference data like currencies and regions gets a 1-hour TTL (3600 seconds) since this stuff almost never changes. Transaction pages get a shorter 5-minute TTL (300 seconds) because they're more dynamic—new transactions come in throughout the day, and we want reasonably fresh data without hammering the database on every request. Analytics aggregates sit in the middle at 30 minutes (1800 seconds) since they're pre-computed and change at a moderate rate.
 
-Reference data like currencies and regions gets 1 hour (3600 seconds). This stuff almost never changes, so we cache it aggressively.
+The TTLs are configurable via environment variables:
 
-Transaction pages get 5 minutes (300 seconds). The data is more dynamic, but we still want some caching for the grid UI.
-
-Analytics summaries get 30 minutes. They're pre-aggregated so we don't want to recalculate them constantly.
-
----
-
-## Combo-Box Caching
-
-When the GUI loads, it needs to populate dropdowns for currencies, loan types, regions, etc. These come from the `/cache/reference/{type}` endpoint.
-
-First request for currencies hits the database, caches the result, returns it with `cached: false`. Second request finds it in Redis and returns immediately with `cached: true`.
-
-If someone adds a new currency to the database, we need to invalidate the cache. There's a DELETE endpoint for that:
-
-```
-DELETE /cache/reference/currencies
+```python
+REFERENCE_TTL = int(os.getenv('CACHE_REFERENCE_TTL', 3600))
+TRANSACTION_TTL = int(os.getenv('CACHE_TRANSACTION_TTL', 300))
 ```
 
-Or to clear everything:
+### Cache Invalidation
 
-```
-DELETE /cache/reference/all
+When data changes, we need to clear the stale cache. There are two approaches:
+
+1. **Wait for TTL** — The cached data eventually expires. Simple, but there's a window where the cache is stale.
+
+2. **Explicit invalidation** — Call a delete endpoint when data changes.
+
+We support explicit invalidation via DELETE endpoints:
+
+```bash
+# Invalidate one type
+curl -X DELETE http://localhost:8000/cache/reference/currencies
+
+# Invalidate all reference data
+curl -X DELETE http://localhost:8000/cache/reference/all
 ```
 
-After invalidation, the next request reloads from the database.
+In a real system, we'd hook these into the OLTP write operations. When someone adds a new currency, the insert trigger could call the invalidation endpoint.
 
 ---
 
 ## Look-Ahead Paging
 
-This is for the transaction grid. When a user requests page 1, we also pre-load page 2 into the cache. That way, when they scroll down, page 2 is already there.
+The transaction grid uses a pagination pattern where we pre-load the next page while the user is viewing the current one. This makes scrolling feel instant.
+
+### How It Works
+
+When the user requests page 1:
+1. Load page 1 from cache or database
+2. Return page 1 to the user immediately
+3. In the background, check if page 2 is cached
+4. If not, load page 2 and cache it
 
 ```python
-# Load the requested page
-data = load_from_db(page)
-redis.set(cache_key, data, ttl=300)
-
-# Pre-cache next page
-if page < total_pages:
-    next_key = f"ml:transactions:p{page+1}:..."
-    if not redis.exists(next_key):
-        next_data = load_from_db(page + 1)
-        redis.set(next_key, next_data, ttl=300)
+async def get_transactions_page(page, page_size):
+    cache_key = f"ml:transactions:p{page}:s{page_size}"
+    
+    # Get requested page
+    data = redis.get_json(cache_key)
+    if data is None:
+        data = load_from_database(page, page_size)
+        redis.set_json(cache_key, data, TRANSACTION_TTL)
+    
+    # Pre-load next page
+    if data['has_next']:
+        next_key = f"ml:transactions:p{page+1}:s{page_size}"
+        if not redis.exists(next_key):
+            next_data = load_from_database(page + 1, page_size)
+            redis.set_json(next_key, next_data, TRANSACTION_TTL)
+    
+    return data
 ```
 
-The result is that after the first page load, scrolling through the grid is really fast—each page is already cached. We only go back to the database when the cache expires or if someone jumps to a random page.
+### User Experience
+
+From the user's perspective:
+- Page 1 load: might be slow (first request, cache miss)
+- Page 2 load: instant (pre-cached while viewing page 1)
+- Page 3 load: instant (pre-cached while viewing page 2)
+- And so on...
+
+If the user jumps directly to page 10, there's a cache miss and it's slow. But sequential scrolling, which is the common case, is always fast.
 
 ---
 
-## Error Handling
+## Exception Handling
 
-If Redis is down or slow, we don't crash. The code catches connection errors and falls back to the database:
+The cache should never break the application. If Redis is down, slow, or throws errors, we fall back to the database.
+
+### Connection Handling
 
 ```python
-try:
-    cached = redis.get_json(key)
-except RedisError:
-    cached = None  # will trigger database load
+class RedisClient:
+    def __init__(self):
+        try:
+            self.redis = redis.Redis(
+                host='localhost',
+                port=6379,
+                socket_timeout=2,  # Don't wait forever
+                socket_connect_timeout=2
+            )
+            self.redis.ping()  # Verify connection
+            self.available = True
+        except RedisError:
+            self.available = False
+            logging.warning("Redis not available, caching disabled")
 ```
 
-It's slower without the cache, but the app keeps working.
+If the initial connection fails, we set `available = False` and all cache operations become no-ops. The app continues to work, just without caching.
+
+### Operation-Level Fallback
+
+Even if the initial connection succeeds, individual operations can fail. We wrap every cache call in try/except:
+
+```python
+def get_json(self, key):
+    if not self.available:
+        return None
+    try:
+        data = self.redis.get(key)
+        return json.loads(data) if data else None
+    except RedisError as e:
+        logging.error(f"Redis GET failed for {key}: {e}")
+        return None  # Triggers database fallback
+```
+
+A failed GET returns None (treated as cache miss), triggering a database load. A failed SET is logged but doesn't affect the response—the data was already retrieved from the database.
 
 ---
 
-## Telemetry
+## Logging & Telemetry
 
-Redis tracks hits and misses automatically. You can see them with:
+### What We Log
 
-```bash
-redis-cli INFO stats | grep keyspace
-# keyspace_hits:24
-# keyspace_misses:12
+Every cache operation logs its outcome:
+
+```
+INFO [cache] HIT ml:reference:currencies ttl=2847s latency=1.2ms
+INFO [cache] MISS ml:reference:loan_types loaded from DB in 45.3ms
+WARN [cache] Redis timeout for ml:transactions:p5:s10, falling back to DB
+ERROR [cache] Redis connection refused
 ```
 
-That's a 66% hit rate, which is pretty good. Memory usage:
+The log includes:
+- Operation result (HIT, MISS, ERROR)
+- Cache key
+- Remaining TTL (for hits)
+- Latency in milliseconds
 
-```bash
-redis-cli INFO memory | grep used_memory_human
-# used_memory_human:1.21M
+### Metrics Tracking
+
+We track aggregate metrics in Redis itself using time-series keys:
+
+```
+ml:metrics:hits:minute:202512051030   → 47
+ml:metrics:misses:minute:202512051030 → 12
+ml:metrics:hits:total                 → {currencies: 150, loan_types: 89, ...}
 ```
 
-We also log cache hits/misses in the application logs so we can see which keys are being accessed most.
+The `/cache/metrics` endpoint returns a summary:
 
-## Logging & Exceptions
-- Cache endpoints log hits/misses with latency for reference data and paged transactions.
-- Redis client catches connection/timeouts and falls back to DB, logging errors with key context.
-- Metrics API (`/cache/metrics`) exposes hit ratio, avg cache vs DB latency, and errors/minute; hourly view available via `/cache/metrics/hourly`.
+```json
+{
+  "current_minute": {"hits": 47, "misses": 12, "hit_ratio": "79.7%"},
+  "totals": {"hits": 1234, "misses": 456},
+  "latency": {
+    "cache_avg_ms": 1.5,
+    "db_avg_ms": 42.3,
+    "speedup": "28x"
+  }
+}
+```
+
+### Using Telemetry
+
+These metrics help answer questions like:
+- **Is caching working?** Check the hit ratio. Should be >70% for reference data.
+- **Are TTLs set right?** High miss rate might mean TTLs are too short.
+- **What's the performance gain?** Compare cache vs DB latency.
+
+In production, we'd push these to a monitoring system like Prometheus or Datadog and set up alerts. For now, we just expose them via API.
 
 ---
 
-## Demo Flow
+## Demo Walkthrough
 
-For the combo-box demo:
-1. Load currencies → cache miss, loads from DB
-2. Load currencies again → cache hit
-3. Invalidate with DELETE endpoint
-4. Load currencies → cache miss again (fresh data)
+Here's how to demonstrate the caching behavior:
 
-For the grid demo:
-1. Request page 1 → cache miss, also pre-caches page 2
-2. Request page 2 → cache hit
-3. Request page 1 again → cache hit
+### Combo-Box Caching Demo
+
+1. Clear the cache:
+   ```bash
+   redis-cli FLUSHDB
+   ```
+
+2. Load currencies (cache miss):
+   ```bash
+   curl http://localhost:8000/cache/reference/currencies
+   # Look for "cached": false
+   ```
+
+3. Load currencies again (cache hit):
+   ```bash
+   curl http://localhost:8000/cache/reference/currencies
+   # Look for "cached": true
+   ```
+
+4. Invalidate and reload:
+   ```bash
+   curl -X DELETE http://localhost:8000/cache/reference/currencies
+   curl http://localhost:8000/cache/reference/currencies
+   # Look for "cached": false (fresh load)
+   ```
+
+### Look-Ahead Paging Demo
+
+1. Clear transaction cache:
+   ```bash
+   redis-cli KEYS 'ml:transactions:*' | xargs redis-cli DEL
+   ```
+
+2. Request page 1:
+   ```bash
+   curl "http://localhost:8000/reporting/transactions?page=1&page_size=10"
+   # "cached": false
+   ```
+
+3. Check Redis—page 2 should be pre-cached:
+   ```bash
+   redis-cli KEYS 'ml:transactions:*'
+   # Should show both p1 and p2
+   ```
+
+4. Request page 2 (instant hit):
+   ```bash
+   curl "http://localhost:8000/reporting/transactions?page=2&page_size=10"
+   # "cached": true
+   ```
