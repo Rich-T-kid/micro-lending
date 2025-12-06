@@ -45,9 +45,10 @@ def get_db_config() -> Dict:
 
 
 class ETLOrchestrator:
-    def __init__(self, mode: str = 'full', dry_run: bool = False):
+    def __init__(self, mode: str = 'full', dry_run: bool = False, batch_size: int = 5000):
         self.mode = mode
         self.dry_run = dry_run
+        self.batch_size = batch_size
         self.config = get_db_config()
         self.run_id = None
         self.logger = None
@@ -142,10 +143,10 @@ class ETLOrchestrator:
             conn.close()
 
     def run_extract(self) -> Dict[str, ExtractResult]:
-        self.logger.info(f"Starting extract phase ({self.mode} mode)")
+        self.logger.info(f"Starting extract phase ({self.mode} mode), batch_size={self.batch_size}")
         start_time = datetime.now()
         
-        extractor = Extractor(self.config)
+        extractor = Extractor(self.config, batch_size=self.batch_size)
         extractor.connect()
         
         try:
@@ -175,7 +176,7 @@ class ETLOrchestrator:
         self.logger.info("Starting transform phase")
         start_time = datetime.now()
         
-        transformer = Transformer()
+        transformer = Transformer(batch_size=self.batch_size)
         results = transformer.run_transform(extract_results)
         
         for name, result in results.items():
@@ -213,6 +214,7 @@ class ETLOrchestrator:
             return {}
         
         loader = Loader(self.config)
+        loader.batch_size = self.batch_size
         loader.connect()
         
         try:
@@ -295,33 +297,85 @@ def main():
         default='INFO',
         help='Logging level'
     )
+    parser.add_argument(
+        '--batch-size',
+        type=int,
+        default=5000,
+        help='Batch size for processing (1K-10K recommended, default: 5000)'
+    )
     
     args = parser.parse_args()
     
-    orchestrator = ETLOrchestrator(mode=args.mode, dry_run=args.dry_run)
+    # Validate batch size is within 1K-10K range
+    if args.batch_size < 1000 or args.batch_size > 10000:
+        parser.error("Batch size must be between 1000 and 10000")
+    
+    orchestrator = ETLOrchestrator(mode=args.mode, dry_run=args.dry_run, batch_size=args.batch_size)
     metrics = orchestrator.run()
     
-    print("\n" + "=" * 60)
-    print("ETL RUN SUMMARY")
-    print("=" * 60)
-    print(f"Run ID:     {orchestrator.run_id}")
-    print(f"Mode:       {args.mode}")
-    print(f"Status:     {metrics['status']}")
-    print(f"Started:    {metrics['started_at']}")
-    print(f"Completed:  {metrics['completed_at']}")
-    print("-" * 60)
-    print("Extract:")
+    # Calculate totals for summary
+    total_extracted = sum(m.get('row_count', 0) for m in metrics['extract'].values())
+    total_transformed = sum(m.get('row_count', 0) for m in metrics['transform'].values())
+    total_rejected = sum(m.get('rejected_count', 0) for m in metrics['transform'].values())
+    total_loaded = sum(m.get('rows_inserted', 0) + m.get('rows_updated', 0) for m in metrics['load'].values())
+    
+    extract_time = sum(m.get('extract_time', 0) for m in metrics['extract'].values())
+    transform_time = sum(m.get('transform_time', 0) for m in metrics['transform'].values())
+    load_time = sum(m.get('load_time', 0) for m in metrics['load'].values())
+    
+    print("\n" + "=" * 80)
+    print("ETL RUN SUMMARY - PERFORMANCE METRICS")
+    print("=" * 80)
+    print(f"Run ID:        {orchestrator.run_id}")
+    print(f"Mode:          {args.mode}")
+    print(f"Batch Size:    {args.batch_size} rows")
+    print(f"Status:        {metrics['status']}")
+    print(f"Started:       {metrics['started_at']}")
+    print(f"Completed:     {metrics['completed_at']}")
+    print("-" * 80)
+    
+    print("\n[EXTRACT PHASE]")
+    print(f"{'Source':<25} {'Table':<25} {'Rows':<10} {'Time (s)':<12} {'Rows/sec'}")
+    print("-" * 80)
     for name, m in metrics['extract'].items():
-        print(f"  {name}: {m['row_count']} rows ({m['extract_time']:.2f}s)")
-    print("-" * 60)
-    print("Transform:")
+        rows = m.get('row_count', 0)
+        time_s = m.get('extract_time', 0)
+        rps = rows / time_s if time_s > 0 else 0
+        print(f"{m.get('source', 'unknown'):<25} {m.get('table', name):<25} {rows:<10} {time_s:<12.3f} {rps:<.1f}")
+    print("-" * 80)
+    print(f"{'EXTRACT TOTAL':<52} {total_extracted:<10} {extract_time:<12.3f} {total_extracted/extract_time if extract_time > 0 else 0:<.1f}")
+    
+    print("\n[TRANSFORM PHASE]")
+    print(f"{'Target Table':<35} {'Rows':<10} {'Rejected':<10} {'Error Rate'}")
+    print("-" * 80)
     for name, m in metrics['transform'].items():
-        print(f"  {name}: {m['row_count']} rows, {m['rejected_count']} rejected")
-    print("-" * 60)
-    print("Load:")
+        rows = m.get('row_count', 0)
+        rejected = m.get('rejected_count', 0)
+        error_rate = (rejected / (rows + rejected) * 100) if (rows + rejected) > 0 else 0
+        print(f"{m.get('table', name):<35} {rows:<10} {rejected:<10} {error_rate:.2f}%")
+    print("-" * 80)
+    print(f"{'TRANSFORM TOTAL':<35} {total_transformed:<10} {total_rejected:<10}")
+    
+    print("\n[LOAD PHASE - BULK LOADING PERFORMANCE]")
+    print(f"{'Target Table':<35} {'Inserted':<10} {'Updated':<10} {'Time (s)':<12} {'Rows/sec'}")
+    print("-" * 80)
     for name, m in metrics['load'].items():
-        print(f"  {name}: {m['rows_inserted']} inserted, {m['rows_updated']} updated")
-    print("=" * 60)
+        inserted = m.get('rows_inserted', 0)
+        updated = m.get('rows_updated', 0)
+        time_s = m.get('load_time', 0)
+        rps = (inserted + updated) / time_s if time_s > 0 else 0
+        print(f"{m.get('table', name):<35} {inserted:<10} {updated:<10} {time_s:<12.3f} {rps:<.1f}")
+    print("-" * 80)
+    print(f"{'LOAD TOTAL':<35} {total_loaded:<10} {'':<10} {load_time:<12.3f} {total_loaded/load_time if load_time > 0 else 0:<.1f}")
+    
+    print("\n" + "=" * 80)
+    print("TUNING CONFIGURATION")
+    print("=" * 80)
+    print(f"  Batch Size:          {args.batch_size} rows per batch")
+    print(f"  Load Method:         Bulk INSERT with executemany() / Stored Procedures")
+    print(f"  Transaction Mode:    Single commit per batch (not per row)")
+    print(f"  Validation:          Set-based via stored procedures (not row-by-row)")
+    print("=" * 80)
 
 
 if __name__ == '__main__':

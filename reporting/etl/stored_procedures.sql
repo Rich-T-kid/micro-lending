@@ -196,4 +196,170 @@ BEGIN
 END //
 
 
+-- ============================================================================
+-- STAGING TABLE WORKFLOW (as per professor's slides)
+-- Example Workflow:
+--   1. Load into MySQL staging table stg_sales
+--   2. Run SQL procedure: INSERT INTO fact_sales SELECT ... FROM stg_sales
+-- ============================================================================
+
+-- Stored procedure to load dimension from staging table using INSERT...SELECT
+CREATE PROCEDURE sp_etl_load_dim_user_from_staging(
+    IN p_run_id INT,
+    OUT p_rows_inserted INT,
+    OUT p_rows_updated INT,
+    OUT p_rows_rejected INT,
+    OUT p_status VARCHAR(20),
+    OUT p_message VARCHAR(255)
+)
+BEGIN
+    DECLARE v_start_time DATETIME;
+    
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        GET DIAGNOSTICS CONDITION 1 @err_msg = MESSAGE_TEXT;
+        SET p_status = 'failed';
+        SET p_message = @err_msg;
+        ROLLBACK;
+    END;
+    
+    SET v_start_time = NOW();
+    SET p_rows_inserted = 0;
+    SET p_rows_updated = 0;
+    SET p_rows_rejected = 0;
+    
+    START TRANSACTION;
+    
+    -- Step 1: Count rejected records (validation_status = 'FAIL')
+    SELECT COUNT(*) INTO p_rows_rejected 
+    FROM etl_staging_user 
+    WHERE run_id = p_run_id AND is_valid = FALSE;
+    
+    -- Step 2: UPDATE existing records (SCD Type 1 - overwrite)
+    UPDATE dim_user du
+    INNER JOIN etl_staging_user su ON du.user_id = su.user_id AND du.is_current = TRUE
+    SET 
+        du.email = su.email,
+        du.full_name = su.full_name,
+        du.role = su.role,
+        du.credit_score = su.credit_score,
+        du.credit_tier = su.credit_tier,
+        du.region_code = su.region_code,
+        du.region_name = su.region_name,
+        du.is_active = su.is_active
+    WHERE su.run_id = p_run_id AND su.is_valid = TRUE;
+    
+    SET p_rows_updated = ROW_COUNT();
+    
+    -- Step 3: INSERT new records using INSERT...SELECT from staging
+    INSERT INTO dim_user (user_id, email, full_name, role, credit_score, credit_tier,
+                          region_code, region_name, is_active, effective_date, expiry_date, is_current)
+    SELECT 
+        su.user_id,
+        su.email,
+        su.full_name,
+        su.role,
+        su.credit_score,
+        su.credit_tier,
+        su.region_code,
+        su.region_name,
+        su.is_active,
+        CURDATE() as effective_date,
+        '9999-12-31' as expiry_date,
+        TRUE as is_current
+    FROM etl_staging_user su
+    LEFT JOIN dim_user du ON su.user_id = du.user_id AND du.is_current = TRUE
+    WHERE su.run_id = p_run_id 
+      AND su.is_valid = TRUE
+      AND du.user_key IS NULL;  -- Only insert if not exists
+    
+    SET p_rows_inserted = ROW_COUNT();
+    
+    COMMIT;
+    
+    SET p_status = 'success';
+    SET p_message = CONCAT('Loaded dim_user: ', p_rows_inserted, ' inserted, ', 
+                           p_rows_updated, ' updated, ', p_rows_rejected, ' rejected');
+END //
+
+
+-- Stored procedure to load facts from staging with validation
+CREATE PROCEDURE sp_etl_load_facts_from_staging(
+    IN p_run_id INT,
+    IN p_batch_size INT,
+    OUT p_rows_loaded INT,
+    OUT p_rows_rejected INT,
+    OUT p_status VARCHAR(20),
+    OUT p_message VARCHAR(255)
+)
+BEGIN
+    DECLARE v_start_time DATETIME;
+    DECLARE v_duration INT;
+    
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        GET DIAGNOSTICS CONDITION 1 @err_msg = MESSAGE_TEXT;
+        SET p_status = 'failed';
+        SET p_message = @err_msg;
+        ROLLBACK;
+    END;
+    
+    SET v_start_time = NOW();
+    SET p_rows_loaded = 0;
+    SET p_rows_rejected = 0;
+    
+    START TRANSACTION;
+    
+    -- Count rejected records
+    SELECT COUNT(*) INTO p_rows_rejected 
+    FROM etl_staging_loan 
+    WHERE run_id = p_run_id AND is_valid = FALSE;
+    
+    -- INSERT...SELECT from staging to fact table (professor's workflow pattern)
+    INSERT INTO fact_loan_transactions (
+        date_key, user_key, product_key, currency_key, status_key,
+        loan_id, application_id, transaction_type, principal_amount,
+        interest_amount, total_amount, amount_usd, interest_rate,
+        term_months, outstanding_balance, fx_rate
+    )
+    SELECT 
+        CAST(DATE_FORMAT(COALESCE(sl.created_at, NOW()), '%Y%m%d') AS UNSIGNED) as date_key,
+        COALESCE(du.user_key, 1) as user_key,
+        COALESCE(dp.product_key, 1) as product_key,
+        1 as currency_key,
+        COALESCE(ds.status_key, 5) as status_key,
+        sl.loan_id,
+        sl.application_id,
+        'origination' as transaction_type,
+        sl.principal_amount,
+        ROUND(sl.principal_amount * (sl.interest_rate / 100) * (sl.term_months / 12), 2) as interest_amount,
+        sl.principal_amount + ROUND(sl.principal_amount * (sl.interest_rate / 100) * (sl.term_months / 12), 2),
+        sl.principal_amount as amount_usd,
+        sl.interest_rate,
+        sl.term_months,
+        sl.outstanding_balance,
+        COALESCE(sl.fx_rate, 1.000000)
+    FROM etl_staging_loan sl
+    LEFT JOIN dim_user du ON sl.borrower_id = du.user_id AND du.is_current = TRUE
+    LEFT JOIN dim_loan_product dp ON dp.is_current = TRUE
+    LEFT JOIN dim_loan_status ds ON sl.status = ds.status_code
+    WHERE sl.run_id = p_run_id 
+      AND sl.is_valid = TRUE
+      AND NOT EXISTS (
+          SELECT 1 FROM fact_loan_transactions f 
+          WHERE f.loan_id = sl.loan_id AND f.transaction_type = 'origination'
+      )
+    LIMIT p_batch_size;
+    
+    SET p_rows_loaded = ROW_COUNT();
+    
+    COMMIT;
+    
+    SET v_duration = TIMESTAMPDIFF(SECOND, v_start_time, NOW());
+    SET p_status = 'success';
+    SET p_message = CONCAT('Loaded ', p_rows_loaded, ' facts from staging, ',
+                           p_rows_rejected, ' rejected, in ', v_duration, 's');
+END //
+
+
 DELIMITER ;

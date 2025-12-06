@@ -8,6 +8,9 @@ from decimal import Decimal, InvalidOperation
 
 logger = logging.getLogger(__name__)
 
+# Batch size for transform processing (1K-10K range per project requirements)
+TRANSFORM_BATCH_SIZE = 5000
+
 
 @dataclass
 class ValidationError:
@@ -30,10 +33,11 @@ class TransformResult:
 
 
 class Transformer:
-    def __init__(self, reference_data: Dict = None, market_data: Dict = None):
+    def __init__(self, reference_data: Dict = None, market_data: Dict = None, batch_size: int = TRANSFORM_BATCH_SIZE):
         self.reference_data = reference_data or {}
         self.market_data = market_data or {}
         self.errors = []
+        self.batch_size = batch_size
         self.user_key_map = {}
         self.product_key_map = {}
         self.currency_key_map = {}
@@ -181,38 +185,46 @@ class Transformer:
         rejected = 0
         
         valid_roles = ['borrower', 'lender', 'admin']
+        total_users = len(users)
         
-        for user in users:
-            row_errors = []
-            row_errors.extend(self.validate_not_null(user, ['id', 'email', 'role'], 'user'))
+        # Process in batches
+        for batch_start in range(0, total_users, self.batch_size):
+            batch = users[batch_start:batch_start + self.batch_size]
             
-            role_error = self.validate_enum(user, 'role', valid_roles, 'user')
-            if role_error:
-                row_errors.append(role_error)
+            for user in batch:
+                row_errors = []
+                row_errors.extend(self.validate_not_null(user, ['id', 'email', 'role'], 'user'))
+                
+                role_error = self.validate_enum(user, 'role', valid_roles, 'user')
+                if role_error:
+                    row_errors.append(role_error)
+                
+                score_error = self.validate_range(user, 'credit_score', 300, 850, 'user')
+                if score_error:
+                    row_errors.append(score_error)
+                
+                if row_errors:
+                    errors.extend(row_errors)
+                    rejected += 1
+                    continue
+                
+                transformed.append({
+                    'user_id': user['id'],
+                    'email': user['email'],
+                    'full_name': user.get('full_name'),
+                    'role': user['role'],
+                    'credit_score': user.get('credit_score'),
+                    'credit_tier': self.get_credit_tier(user.get('credit_score')),
+                    'region_code': None,
+                    'region_name': None,
+                    'is_active': user.get('is_active', True),
+                    'effective_date': datetime.now().date(),
+                    'expiry_date': date(9999, 12, 31),
+                    'is_current': True
+                })
             
-            score_error = self.validate_range(user, 'credit_score', 300, 850, 'user')
-            if score_error:
-                row_errors.append(score_error)
-            
-            if row_errors:
-                errors.extend(row_errors)
-                rejected += 1
-                continue
-            
-            transformed.append({
-                'user_id': user['id'],
-                'email': user['email'],
-                'full_name': user.get('full_name'),
-                'role': user['role'],
-                'credit_score': user.get('credit_score'),
-                'credit_tier': self.get_credit_tier(user.get('credit_score')),
-                'region_code': None,
-                'region_name': None,
-                'is_active': user.get('is_active', True),
-                'effective_date': datetime.now().date(),
-                'expiry_date': date(9999, 12, 31),
-                'is_current': True
-            })
+            if total_users > self.batch_size:
+                logger.debug(f"Users batch {batch_start//self.batch_size + 1}: processed {len(batch)} rows")
         
         transform_time = (datetime.now() - start_time).total_seconds()
         logger.info(f"Transformed {len(transformed)} users, rejected {rejected}")
@@ -234,53 +246,61 @@ class Transformer:
         
         valid_statuses = ['pending', 'approved', 'rejected', 'withdrawn', 
                          'active', 'paid_off', 'defaulted', 'cancelled']
+        total_loans = len(loans)
         
-        for loan in loans:
-            row_errors = []
-            row_errors.extend(self.validate_not_null(
-                loan, ['id', 'borrower_id', 'principal_amount', 'interest_rate', 'term_months'], 'loan'
-            ))
+        # Process in batches
+        for batch_start in range(0, total_loans, self.batch_size):
+            batch = loans[batch_start:batch_start + self.batch_size]
             
-            fk_error = self.validate_foreign_key(loan, 'borrower_id', user_ids, 'loan', 'user')
-            if fk_error:
-                row_errors.append(fk_error)
+            for loan in batch:
+                row_errors = []
+                row_errors.extend(self.validate_not_null(
+                    loan, ['id', 'borrower_id', 'principal_amount', 'interest_rate', 'term_months'], 'loan'
+                ))
+                
+                fk_error = self.validate_foreign_key(loan, 'borrower_id', user_ids, 'loan', 'user')
+                if fk_error:
+                    row_errors.append(fk_error)
+                
+                status_error = self.validate_enum(loan, 'status', valid_statuses, 'loan')
+                if status_error:
+                    row_errors.append(status_error)
+                
+                rate_error = self.validate_range(loan, 'interest_rate', 0, 100, 'loan')
+                if rate_error:
+                    row_errors.append(rate_error)
+                
+                if row_errors:
+                    errors.extend(row_errors)
+                    rejected += 1
+                    continue
+                
+                principal = Decimal(str(loan['principal_amount']))
+                interest_rate = Decimal(str(loan['interest_rate']))
+                term_months = Decimal(str(loan['term_months']))
+                interest_amount = principal * (interest_rate / Decimal('100')) * (term_months / Decimal('12'))
+                
+                transformed.append({
+                    'loan_id': loan['id'],
+                    'application_id': loan.get('application_id'),
+                    'date_key': self.get_date_key(loan.get('created_at') or loan.get('disbursed_at')),
+                    'user_id': loan['borrower_id'],
+                    'transaction_type': 'origination',
+                    'principal_amount': principal,
+                    'interest_amount': round(interest_amount, 2),
+                    'total_amount': principal + interest_amount,
+                    'amount_usd': self.convert_to_usd(principal, 'USD'),
+                    'interest_rate': loan['interest_rate'],
+                    'term_months': loan['term_months'],
+                    'term_category': self.get_term_category(loan['term_months']),
+                    'outstanding_balance': loan.get('outstanding_balance', principal),
+                    'status': loan.get('status', 'active'),
+                    'currency_code': 'USD',
+                    'fx_rate': Decimal('1.000000')
+                })
             
-            status_error = self.validate_enum(loan, 'status', valid_statuses, 'loan')
-            if status_error:
-                row_errors.append(status_error)
-            
-            rate_error = self.validate_range(loan, 'interest_rate', 0, 100, 'loan')
-            if rate_error:
-                row_errors.append(rate_error)
-            
-            if row_errors:
-                errors.extend(row_errors)
-                rejected += 1
-                continue
-            
-            principal = Decimal(str(loan['principal_amount']))
-            interest_rate = Decimal(str(loan['interest_rate']))
-            term_months = Decimal(str(loan['term_months']))
-            interest_amount = principal * (interest_rate / Decimal('100')) * (term_months / Decimal('12'))
-            
-            transformed.append({
-                'loan_id': loan['id'],
-                'application_id': loan.get('application_id'),
-                'date_key': self.get_date_key(loan.get('created_at') or loan.get('disbursed_at')),
-                'user_id': loan['borrower_id'],
-                'transaction_type': 'origination',
-                'principal_amount': principal,
-                'interest_amount': round(interest_amount, 2),
-                'total_amount': principal + interest_amount,
-                'amount_usd': self.convert_to_usd(principal, 'USD'),
-                'interest_rate': loan['interest_rate'],
-                'term_months': loan['term_months'],
-                'term_category': self.get_term_category(loan['term_months']),
-                'outstanding_balance': loan.get('outstanding_balance', principal),
-                'status': loan.get('status', 'active'),
-                'currency_code': 'USD',
-                'fx_rate': Decimal('1.000000')
-            })
+            if total_loans > self.batch_size:
+                logger.debug(f"Loans batch {batch_start//self.batch_size + 1}: processed {len(batch)} rows")
         
         transform_time = (datetime.now() - start_time).total_seconds()
         logger.info(f"Transformed {len(transformed)} loans, rejected {rejected}")

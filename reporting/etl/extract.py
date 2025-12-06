@@ -3,12 +3,15 @@
 import os
 import logging
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Generator
 from dataclasses import dataclass
 import pymysql
 from pymysql.cursors import DictCursor
 
 logger = logging.getLogger(__name__)
+
+# Batch size for fetching (1K-10K range per project requirements)
+EXTRACT_BATCH_SIZE = 5000
 
 
 @dataclass
@@ -22,9 +25,10 @@ class ExtractResult:
 
 
 class Extractor:
-    def __init__(self, connection_config: Dict):
+    def __init__(self, connection_config: Dict, batch_size: int = EXTRACT_BATCH_SIZE):
         self.config = connection_config
         self.connection = None
+        self.batch_size = batch_size
 
     def connect(self):
         self.connection = pymysql.connect(
@@ -60,10 +64,18 @@ class Extractor:
 
     def extract_full(self, table: str, columns: str = "*") -> ExtractResult:
         start_time = datetime.now()
+        rows = []
+        
         with self.connection.cursor() as cursor:
             query = f"SELECT {columns} FROM {table}"
             cursor.execute(query)
-            rows = cursor.fetchall()
+            
+            # Batch fetch to handle large tables
+            while True:
+                batch = cursor.fetchmany(self.batch_size)
+                if not batch:
+                    break
+                rows.extend(batch)
         
         extract_time = (datetime.now() - start_time).total_seconds()
         logger.info(f"Full extract from {table}: {len(rows)} rows in {extract_time:.2f}s")
@@ -80,6 +92,7 @@ class Extractor:
                            watermark: datetime, columns: str = "*") -> ExtractResult:
         start_time = datetime.now()
         max_timestamp = watermark
+        rows = []
         
         with self.connection.cursor() as cursor:
             query = f"""
@@ -88,7 +101,13 @@ class Extractor:
                 ORDER BY {timestamp_col}
             """
             cursor.execute(query, (watermark,))
-            rows = cursor.fetchall()
+            
+            # Batch fetch
+            while True:
+                batch = cursor.fetchmany(self.batch_size)
+                if not batch:
+                    break
+                rows.extend(batch)
             
             if rows:
                 cursor.execute(f"SELECT MAX({timestamp_col}) as max_ts FROM {table}")
