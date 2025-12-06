@@ -45,15 +45,22 @@ CREATE TABLE IF NOT EXISTS etl_error_log (
     step_id INT,
     error_type VARCHAR(50) NOT NULL,
     error_code VARCHAR(20),
+    severity ENUM('INFO', 'WARNING', 'ERROR', 'CRITICAL') NOT NULL DEFAULT 'ERROR',
+    process_name VARCHAR(100) NOT NULL DEFAULT 'etl',
     error_message TEXT NOT NULL,
     source_table VARCHAR(100),
     source_record_id VARCHAR(100),
     error_data JSON,
+    stack_trace TEXT,
+    correlation_id VARCHAR(50),
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (run_id) REFERENCES etl_run_log(run_id),
     FOREIGN KEY (step_id) REFERENCES etl_step_log(step_id),
     INDEX idx_error_run (run_id),
-    INDEX idx_error_type (error_type)
+    INDEX idx_error_type (error_type),
+    INDEX idx_error_severity (severity),
+    INDEX idx_error_process (process_name),
+    INDEX idx_error_correlation (correlation_id)
 );
 
 -- High-water marks for incremental loads
@@ -192,6 +199,7 @@ BEGIN
     -- Validate loans: check FK, ranges, enums using SET-BASED operations
     UPDATE etl_staging_loan sl
     LEFT JOIN user u ON sl.borrower_id = u.id
+    LEFT JOIN dim_loan_status dls ON sl.status = dls.status_code
     SET sl.is_valid = FALSE,
         sl.validation_error = CASE
             WHEN sl.loan_id IS NULL THEN 'NULL_LOAN_ID'
@@ -200,7 +208,7 @@ BEGIN
             WHEN sl.principal_amount IS NULL OR sl.principal_amount <= 0 THEN 'INVALID_PRINCIPAL'
             WHEN sl.interest_rate < 0 OR sl.interest_rate > 100 THEN 'INVALID_RATE'
             WHEN sl.term_months IS NULL OR sl.term_months <= 0 THEN 'INVALID_TERM'
-            WHEN sl.status NOT IN ('pending', 'approved', 'rejected', 'withdrawn', 'active', 'paid_off', 'defaulted', 'cancelled') THEN 'INVALID_STATUS'
+            WHEN dls.status_key IS NULL THEN 'INVALID_STATUS'
             ELSE NULL
         END
     WHERE sl.run_id = p_run_id;

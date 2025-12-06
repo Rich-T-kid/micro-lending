@@ -1,6 +1,6 @@
 FINAL PROJECT SUBMISSION LOG
 MicroLending Analytics Platform
-Generated: 2025-12-03 10:21:36
+Generated: 2025-12-05 21:13:29
 Students: Saksham Mehta, Jose Lamela, Richard Baah
 
 This log demonstrates all required Final Project features:
@@ -19,7 +19,7 @@ Query: SELECT 'fact_loan_transactions' as table_name, (SELECT COUNT(*) FROM fact
 
 table_name	row_count
 fact_loan_transactions	432
-fact_daily_portfolio	1
+fact_daily_portfolio	2
 
 
 --- 1.2 Dimension Tables (4+ required) ---
@@ -192,14 +192,20 @@ transaction_db	wallet_account	updated_at	1970-01-01 00:00:00
 Query: SELECT run_id, run_type, status, rows_extracted, rows_transformed, rows_loaded, started_at FROM etl_run_log ORDER BY run_id DESC LIMIT 3;
 
 run_id	run_type	status	rows_extracted	rows_transformed	rows_loaded	started_at
-1	full	success	0	0	432	2025-12-03 02:42:28
+10	full	success	158	48	11	2025-12-05 22:30:56
+9	incremental	success	158	48	11	2025-12-05 22:30:48
+8	incremental	failed	0	0	0	2025-12-05 22:29:51
 
 
 --- 3.4 ETL Step Details ---
 Query: SELECT step_name, step_type, status, rows_processed, duration_seconds FROM etl_step_log ORDER BY step_id DESC LIMIT 5;
 
 step_name	step_type	status	rows_processed	duration_seconds
-load_fact_transactions	load	success	432	0.00
+load_fact_daily_portfolio	load	success	1	0.06
+load_fact_loan_transactions	load	success	0	0.05
+load_dim_loan_product	load	failed	0	0.04
+load_dim_user	load	success	10	0.48
+load_fact_transactions	load	success	0	0.00
 
 
 4. ETL STORED PROCEDURES
@@ -295,6 +301,7 @@ year	month	month_name	transactions	volume
 Query: SELECT date_key, total_loans, active_loans, total_principal, default_rate, avg_loan_size FROM fact_daily_portfolio ORDER BY date_key DESC LIMIT 3;
 
 date_key	total_loans	active_loans	total_principal	default_rate	avg_loan_size
+20251205	27	12	151269.00	0.2222	5602.56
 20251203	27	12	151269.00	0.2222	5602.56
 
 
@@ -308,7 +315,7 @@ Requirement: Run Redis under Docker
 --- 7.1 Docker Container Status ---
 Command: docker ps --filter name=redis
 NAMES                IMAGE            STATUS                    PORTS
-microlending-redis   redis:7-alpine   Up 51 minutes (healthy)   0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
+microlending-redis   redis:7-alpine   Up 10 minutes (healthy)   0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
 
 --- 7.2 Redis Connection Test ---
 Command: redis-cli ping
@@ -351,7 +358,7 @@ Action: Cleared cache, requesting currencies
 Endpoint: GET /cache/reference/currencies
 
 Type: currencies
-Items: 5
+Items: 8
 Cached: False <- FALSE indicates data loaded from database
 TTL: 3600s
 
@@ -412,7 +419,7 @@ Page 1 Cached: True <- TRUE
 
 
 11. CACHE TELEMETRY
-Requirement: Logging, metrics, hit ratios
+Requirement: Logging, metrics, hit ratios, errors per minute
 
 
 --- 11.1 TTL on Cached Keys ---
@@ -424,11 +431,94 @@ Transaction Pages (5 min = 300s):
   ml:transactions:p2:s10:stall:ball TTL: 300s
 
 --- 11.2 Redis Memory Stats ---
-used_memory_human:1.24M
+used_memory_human:1.36M
 
---- 11.3 Cache Hit/Miss Stats ---
-keyspace_hits:45
-keyspace_misses:24
+--- 11.3 Cache Hit/Miss Stats (Redis Server) ---
+keyspace_hits:44
+keyspace_misses:30
+
+
+12. PERSISTED CACHE METRICS (TIME-SERIES STORE)
+Requirement: Metrics persisted to store (hit ratio, latency, errors per minute)
+
+
+--- 12.1 Current Metrics Summary ---
+Endpoint: GET /cache/metrics
+
+=== Current Minute Stats ===
+Timestamp: 2025-12-05T21:13:34.297641
+Minute Bucket: 202512052113
+
+Current Minute:
+  Hits: 6
+  Misses: 6
+  Errors: 0
+  Total Requests: 12
+  Hit Ratio: 50.0%
+
+All-Time Totals:
+  Total Hits: 9
+  Total Misses: 9
+  Total Errors: 0
+  Total Requests: 18
+  Overall Hit Ratio: 50.0%
+
+Latency Comparison:
+  Avg Cache Latency: 0.89ms
+  Avg DB Latency: 83.72ms
+  Cache Speedup: 94.07x faster
+
+Errors Per Minute: 0
+
+--- 12.2 Persisted Metrics Keys in Redis ---
+Command: redis-cli KEYS 'ml:metrics:*'
+ml:metrics:invalidations:minute:202512052103
+ml:metrics:invalidations:total
+ml:metrics:hits:minute:202512052103
+ml:metrics:misses:hour:2025120521
+ml:metrics:latency:cache:202512052103
+ml:metrics:misses:minute:202512052103
+ml:metrics:hits:hour:2025120521
+ml:metrics:invalidations:minute:202512052113
+ml:metrics:misses:total
+ml:metrics:latency:db:202512052113
+ml:metrics:hits:total
+ml:metrics:latency:cache:202512052113
+ml:metrics:latency:db:202512052103
+ml:metrics:misses:minute:202512052113
+ml:metrics:hits:minute:202512052113
+
+--- 12.3 Hit Counts by Operation (Total) ---
+Command: redis-cli HGETALL 'ml:metrics:hits:total'
+reference:currencies
+3
+transactions
+6
+
+--- 12.4 Miss Counts by Operation (Total) ---
+Command: redis-cli HGETALL 'ml:metrics:misses:total'
+reference:currencies
+6
+transactions
+3
+
+--- 12.5 Hourly Metrics (Last 3 Hours) ---
+Endpoint: GET /cache/metrics/hourly?hours=3
+
+Hours Requested: 3
+
+Hour 2025120521:
+  Requests: 18 | Hits: 9 | Misses: 9
+  Hit Ratio: 50.0% | Error Rate: 0.0%
+
+Hour 2025120520:
+  Requests: 0 | Hits: 0 | Misses: 0
+  Hit Ratio: 0% | Error Rate: 0%
+
+Hour 2025120519:
+  Requests: 0 | Hits: 0 | Misses: 0
+  Hit Ratio: 0% | Error Rate: 0%
+
 
 
 END OF FINAL PROJECT SUBMISSION LOG

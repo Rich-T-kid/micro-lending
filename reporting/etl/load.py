@@ -48,9 +48,15 @@ class Loader:
         self.temp_dir = tempfile.gettempdir()
 
     def connect(self):
+        """Connect to database using provided config - no hardcoded defaults."""
+        if not self.config.get('host'):
+            raise ValueError("Database host is required - set MYSQL_HOST environment variable")
+        if not self.config.get('user'):
+            raise ValueError("Database user is required - set MYSQL_USER environment variable")
+            
         self.connection = pymysql.connect(
-            host=self.config.get('host', 'localhost'),
-            user=self.config.get('user', 'root'),
+            host=self.config['host'],
+            user=self.config['user'],
             password=self.config.get('password', ''),
             database=self.config.get('database', 'microlending'),
             cursorclass=DictCursor,

@@ -43,10 +43,11 @@ BEGIN
         SET p_is_valid = FALSE;
         SET p_error_code = 'INVALID_TERM';
         SET p_error_message = 'Term months must be positive';
-    ELSEIF p_status NOT IN ('pending', 'approved', 'rejected', 'withdrawn', 'active', 'paid_off', 'defaulted', 'cancelled') THEN
+    ELSEIF NOT EXISTS (SELECT 1 FROM dim_loan_status WHERE status_code = p_status) THEN
+        -- Validate status against dim_loan_status table instead of hardcoded list
         SET p_is_valid = FALSE;
         SET p_error_code = 'INVALID_STATUS';
-        SET p_error_message = CONCAT('Invalid status: ', p_status);
+        SET p_error_message = CONCAT('Invalid status: ', p_status, ' - not found in dim_loan_status');
     END IF;
 END //
 

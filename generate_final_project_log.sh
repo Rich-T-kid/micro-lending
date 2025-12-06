@@ -396,7 +396,7 @@ echo "" >> "$OUTPUT_FILE"
 section "11. CACHE TELEMETRY"
 
 cat >> "$OUTPUT_FILE" << 'EOF'
-Requirement: Logging, metrics, hit ratios
+Requirement: Logging, metrics, hit ratios, errors per minute
 
 EOF
 
@@ -415,8 +415,82 @@ echo "--- 11.2 Redis Memory Stats ---" >> "$OUTPUT_FILE"
 redis-cli INFO memory 2>&1 | grep -E "used_memory_human|peak_memory" >> "$OUTPUT_FILE"
 echo "" >> "$OUTPUT_FILE"
 
-echo "--- 11.3 Cache Hit/Miss Stats ---" >> "$OUTPUT_FILE"
+echo "--- 11.3 Cache Hit/Miss Stats (Redis Server) ---" >> "$OUTPUT_FILE"
 redis-cli INFO stats 2>&1 | grep -E "keyspace_hits|keyspace_misses" >> "$OUTPUT_FILE"
+echo "" >> "$OUTPUT_FILE"
+
+# NEW: Application-Level Metrics from Time-Series Store
+
+section "12. PERSISTED CACHE METRICS (TIME-SERIES STORE)"
+
+cat >> "$OUTPUT_FILE" << 'EOF'
+Requirement: Metrics persisted to store (hit ratio, latency, errors per minute)
+
+EOF
+
+echo "" >> "$OUTPUT_FILE"
+echo "--- 12.1 Current Metrics Summary ---" >> "$OUTPUT_FILE"
+echo "Endpoint: GET /cache/metrics" >> "$OUTPUT_FILE"
+echo "" >> "$OUTPUT_FILE"
+curl -s "${API_BASE}/cache/metrics" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+print('=== Current Minute Stats ===')
+print(f'Timestamp: {d[\"timestamp\"]}')
+print(f'Minute Bucket: {d[\"minute_key\"]}')
+print('')
+print('Current Minute:')
+print(f'  Hits: {d[\"current_minute\"][\"hits\"]}')
+print(f'  Misses: {d[\"current_minute\"][\"misses\"]}')
+print(f'  Errors: {d[\"current_minute\"][\"errors\"]}')
+print(f'  Total Requests: {d[\"current_minute\"][\"requests\"]}')
+print(f'  Hit Ratio: {d[\"current_minute\"][\"hit_ratio\"]}%')
+print('')
+print('All-Time Totals:')
+print(f'  Total Hits: {d[\"totals\"][\"hits\"]}')
+print(f'  Total Misses: {d[\"totals\"][\"misses\"]}')
+print(f'  Total Errors: {d[\"totals\"][\"errors\"]}')
+print(f'  Total Requests: {d[\"totals\"][\"requests\"]}')
+print(f'  Overall Hit Ratio: {d[\"totals\"][\"hit_ratio\"]}%')
+print('')
+print('Latency Comparison:')
+print(f'  Avg Cache Latency: {d[\"latency\"][\"avg_cache_ms\"]}ms')
+print(f'  Avg DB Latency: {d[\"latency\"][\"avg_db_ms\"]}ms')
+print(f'  Cache Speedup: {d[\"latency\"][\"speedup_factor\"]}x faster')
+print('')
+print(f'Errors Per Minute: {d[\"errors_per_minute\"]}')
+" >> "$OUTPUT_FILE" 2>&1
+echo "" >> "$OUTPUT_FILE"
+
+echo "--- 12.2 Persisted Metrics Keys in Redis ---" >> "$OUTPUT_FILE"
+echo "Command: redis-cli KEYS 'ml:metrics:*'" >> "$OUTPUT_FILE"
+redis-cli KEYS "ml:metrics:*" >> "$OUTPUT_FILE" 2>&1
+echo "" >> "$OUTPUT_FILE"
+
+echo "--- 12.3 Hit Counts by Operation (Total) ---" >> "$OUTPUT_FILE"
+echo "Command: redis-cli HGETALL 'ml:metrics:hits:total'" >> "$OUTPUT_FILE"
+redis-cli HGETALL "ml:metrics:hits:total" >> "$OUTPUT_FILE" 2>&1
+echo "" >> "$OUTPUT_FILE"
+
+echo "--- 12.4 Miss Counts by Operation (Total) ---" >> "$OUTPUT_FILE"
+echo "Command: redis-cli HGETALL 'ml:metrics:misses:total'" >> "$OUTPUT_FILE"
+redis-cli HGETALL "ml:metrics:misses:total" >> "$OUTPUT_FILE" 2>&1
+echo "" >> "$OUTPUT_FILE"
+
+echo "--- 12.5 Hourly Metrics (Last 3 Hours) ---" >> "$OUTPUT_FILE"
+echo "Endpoint: GET /cache/metrics/hourly?hours=3" >> "$OUTPUT_FILE"
+echo "" >> "$OUTPUT_FILE"
+curl -s "${API_BASE}/cache/metrics/hourly?hours=3" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+print(f'Hours Requested: {d[\"hours\"]}')
+print('')
+for h in d['data'][:3]:
+    print(f'Hour {h[\"hour\"]}:')
+    print(f'  Requests: {h[\"requests\"]} | Hits: {h[\"hits\"]} | Misses: {h[\"misses\"]}')
+    print(f'  Hit Ratio: {h[\"hit_ratio\"]}% | Error Rate: {h[\"error_rate\"]}%')
+    print('')
+" >> "$OUTPUT_FILE" 2>&1
 echo "" >> "$OUTPUT_FILE"
 
 fi  # End API_AVAILABLE check

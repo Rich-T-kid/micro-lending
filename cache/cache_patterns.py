@@ -1,5 +1,6 @@
 """Cache Patterns for Micro-Lending Application."""
 
+import os
 import json
 import logging
 import hashlib
@@ -11,10 +12,12 @@ from cache.redis_client import get_redis_client, RedisClient
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_TTL = 300
-LOAN_TTL = 600
-USER_TTL = 900
-ANALYTICS_TTL = 1800
+# TTL values loaded from environment or use defaults
+# These can be overridden via CACHE_*_TTL environment variables
+DEFAULT_TTL = int(os.getenv('CACHE_DEFAULT_TTL', 300))
+LOAN_TTL = int(os.getenv('CACHE_LOAN_TTL', 600))
+USER_TTL = int(os.getenv('CACHE_USER_TTL', 900))
+ANALYTICS_TTL = int(os.getenv('CACHE_ANALYTICS_TTL', 1800))
 
 
 class CacheKeyBuilder:
@@ -194,3 +197,199 @@ class UserCache:
 
     def invalidate_wallet(self, user_id: int) -> bool:
         return self._cache.invalidate(CacheKeyBuilder.wallet(user_id))
+
+
+class CacheMetrics:
+    """Time-series metrics for cache telemetry (hits, misses, latency)."""
+    
+    METRICS_TTL = 86400  # 24 hours
+    METRICS_PREFIX = 'ml:metrics'
+    
+    def __init__(self, redis_client: RedisClient = None):
+        self._redis = redis_client or get_redis_client()
+    
+    def _get_minute_key(self) -> str:
+        """Get current minute timestamp for bucketing."""
+        return datetime.now().strftime('%Y%m%d%H%M')
+    
+    def _get_hour_key(self) -> str:
+        """Get current hour timestamp for hourly aggregates."""
+        return datetime.now().strftime('%Y%m%d%H')
+    
+    def record_hit(self, operation: str = 'general', latency_ms: float = 0) -> None:
+        """Record a cache hit with optional latency."""
+        minute_key = self._get_minute_key()
+        hour_key = self._get_hour_key()
+        
+        # Increment hit counters
+        self._redis._client.hincrby(f'{self.METRICS_PREFIX}:hits:minute:{minute_key}', operation, 1)
+        self._redis._client.hincrby(f'{self.METRICS_PREFIX}:hits:hour:{hour_key}', operation, 1)
+        self._redis._client.hincrby(f'{self.METRICS_PREFIX}:hits:total', operation, 1)
+        
+        # Set TTL on minute/hour keys
+        self._redis.expire(f'{self.METRICS_PREFIX}:hits:minute:{minute_key}', self.METRICS_TTL)
+        self._redis.expire(f'{self.METRICS_PREFIX}:hits:hour:{hour_key}', self.METRICS_TTL)
+        
+        # Record latency if provided
+        if latency_ms > 0:
+            self._redis._client.lpush(f'{self.METRICS_PREFIX}:latency:cache:{minute_key}', latency_ms)
+            self._redis._client.ltrim(f'{self.METRICS_PREFIX}:latency:cache:{minute_key}', 0, 999)
+            self._redis.expire(f'{self.METRICS_PREFIX}:latency:cache:{minute_key}', self.METRICS_TTL)
+    
+    def record_miss(self, operation: str = 'general', latency_ms: float = 0) -> None:
+        """Record a cache miss with optional latency."""
+        minute_key = self._get_minute_key()
+        hour_key = self._get_hour_key()
+        
+        # Increment miss counters
+        self._redis._client.hincrby(f'{self.METRICS_PREFIX}:misses:minute:{minute_key}', operation, 1)
+        self._redis._client.hincrby(f'{self.METRICS_PREFIX}:misses:hour:{hour_key}', operation, 1)
+        self._redis._client.hincrby(f'{self.METRICS_PREFIX}:misses:total', operation, 1)
+        
+        # Set TTL
+        self._redis.expire(f'{self.METRICS_PREFIX}:misses:minute:{minute_key}', self.METRICS_TTL)
+        self._redis.expire(f'{self.METRICS_PREFIX}:misses:hour:{hour_key}', self.METRICS_TTL)
+        
+        # Record DB latency if provided
+        if latency_ms > 0:
+            self._redis._client.lpush(f'{self.METRICS_PREFIX}:latency:db:{minute_key}', latency_ms)
+            self._redis._client.ltrim(f'{self.METRICS_PREFIX}:latency:db:{minute_key}', 0, 999)
+            self._redis.expire(f'{self.METRICS_PREFIX}:latency:db:{minute_key}', self.METRICS_TTL)
+    
+    def record_error(self, operation: str = 'general', error_type: str = 'unknown') -> None:
+        """Record a cache error."""
+        minute_key = self._get_minute_key()
+        hour_key = self._get_hour_key()
+        
+        # Increment error counters
+        self._redis._client.hincrby(f'{self.METRICS_PREFIX}:errors:minute:{minute_key}', operation, 1)
+        self._redis._client.hincrby(f'{self.METRICS_PREFIX}:errors:hour:{hour_key}', operation, 1)
+        self._redis._client.hincrby(f'{self.METRICS_PREFIX}:errors:total', operation, 1)
+        
+        # Log error type
+        self._redis._client.hincrby(f'{self.METRICS_PREFIX}:error_types:{hour_key}', error_type, 1)
+        
+        # Set TTL
+        self._redis.expire(f'{self.METRICS_PREFIX}:errors:minute:{minute_key}', self.METRICS_TTL)
+        self._redis.expire(f'{self.METRICS_PREFIX}:errors:hour:{hour_key}', self.METRICS_TTL)
+        self._redis.expire(f'{self.METRICS_PREFIX}:error_types:{hour_key}', self.METRICS_TTL)
+    
+    def record_invalidation(self, operation: str = 'general', keys_invalidated: int = 1) -> None:
+        """Record cache invalidation event."""
+        minute_key = self._get_minute_key()
+        
+        self._redis._client.hincrby(f'{self.METRICS_PREFIX}:invalidations:minute:{minute_key}', operation, keys_invalidated)
+        self._redis._client.hincrby(f'{self.METRICS_PREFIX}:invalidations:total', operation, keys_invalidated)
+        self._redis.expire(f'{self.METRICS_PREFIX}:invalidations:minute:{minute_key}', self.METRICS_TTL)
+    
+    def get_current_stats(self) -> dict:
+        """Get current minute's statistics."""
+        minute_key = self._get_minute_key()
+        hour_key = self._get_hour_key()
+        
+        hits_minute = self._redis.hgetall(f'{self.METRICS_PREFIX}:hits:minute:{minute_key}') or {}
+        misses_minute = self._redis.hgetall(f'{self.METRICS_PREFIX}:misses:minute:{minute_key}') or {}
+        errors_minute = self._redis.hgetall(f'{self.METRICS_PREFIX}:errors:minute:{minute_key}') or {}
+        
+        hits_total = self._redis.hgetall(f'{self.METRICS_PREFIX}:hits:total') or {}
+        misses_total = self._redis.hgetall(f'{self.METRICS_PREFIX}:misses:total') or {}
+        errors_total = self._redis.hgetall(f'{self.METRICS_PREFIX}:errors:total') or {}
+        
+        # Calculate totals
+        total_hits_min = sum(int(v) for v in hits_minute.values())
+        total_misses_min = sum(int(v) for v in misses_minute.values())
+        total_errors_min = sum(int(v) for v in errors_minute.values())
+        
+        total_hits = sum(int(v) for v in hits_total.values())
+        total_misses = sum(int(v) for v in misses_total.values())
+        total_errors = sum(int(v) for v in errors_total.values())
+        
+        # Calculate hit ratio
+        total_requests = total_hits + total_misses
+        hit_ratio = round(total_hits / total_requests * 100, 2) if total_requests > 0 else 0
+        
+        # Get average latencies
+        cache_latencies = self._redis._client.lrange(f'{self.METRICS_PREFIX}:latency:cache:{minute_key}', 0, -1)
+        db_latencies = self._redis._client.lrange(f'{self.METRICS_PREFIX}:latency:db:{minute_key}', 0, -1)
+        
+        avg_cache_latency = 0
+        avg_db_latency = 0
+        if cache_latencies:
+            avg_cache_latency = round(sum(float(l) for l in cache_latencies) / len(cache_latencies), 2)
+        if db_latencies:
+            avg_db_latency = round(sum(float(l) for l in db_latencies) / len(db_latencies), 2)
+        
+        return {
+            'timestamp': datetime.now().isoformat(),
+            'minute_key': minute_key,
+            'current_minute': {
+                'hits': total_hits_min,
+                'misses': total_misses_min,
+                'errors': total_errors_min,
+                'requests': total_hits_min + total_misses_min,
+                'hit_ratio': round(total_hits_min / (total_hits_min + total_misses_min) * 100, 2) if (total_hits_min + total_misses_min) > 0 else 0
+            },
+            'totals': {
+                'hits': total_hits,
+                'misses': total_misses,
+                'errors': total_errors,
+                'requests': total_requests,
+                'hit_ratio': hit_ratio
+            },
+            'latency': {
+                'avg_cache_ms': avg_cache_latency,
+                'avg_db_ms': avg_db_latency,
+                'speedup_factor': round(avg_db_latency / avg_cache_latency, 2) if avg_cache_latency > 0 else 0
+            },
+            'errors_per_minute': total_errors_min
+        }
+    
+    def get_hourly_stats(self, hours: int = 24) -> list:
+        """Get hourly statistics for the last N hours."""
+        stats = []
+        now = datetime.now()
+        
+        for i in range(hours):
+            hour = now.replace(minute=0, second=0, microsecond=0)
+            hour_key = hour.strftime('%Y%m%d%H')
+            
+            hits = self._redis.hgetall(f'{self.METRICS_PREFIX}:hits:hour:{hour_key}') or {}
+            misses = self._redis.hgetall(f'{self.METRICS_PREFIX}:misses:hour:{hour_key}') or {}
+            errors = self._redis.hgetall(f'{self.METRICS_PREFIX}:errors:hour:{hour_key}') or {}
+            
+            total_hits = sum(int(v) for v in hits.values())
+            total_misses = sum(int(v) for v in misses.values())
+            total_errors = sum(int(v) for v in errors.values())
+            total_requests = total_hits + total_misses
+            
+            stats.append({
+                'hour': hour_key,
+                'hits': total_hits,
+                'misses': total_misses,
+                'errors': total_errors,
+                'requests': total_requests,
+                'hit_ratio': round(total_hits / total_requests * 100, 2) if total_requests > 0 else 0,
+                'error_rate': round(total_errors / total_requests * 100, 4) if total_requests > 0 else 0
+            })
+            
+            now = now.replace(hour=now.hour - 1 if now.hour > 0 else 23)
+        
+        return stats
+    
+    def reset_metrics(self) -> int:
+        """Reset all metrics (for testing)."""
+        keys = self._redis.keys(f'{self.METRICS_PREFIX}:*')
+        if keys:
+            return self._redis.delete(*keys)
+        return 0
+
+
+# Singleton instance for easy access
+_metrics_instance = None
+
+def get_cache_metrics() -> CacheMetrics:
+    """Get singleton CacheMetrics instance."""
+    global _metrics_instance
+    if _metrics_instance is None:
+        _metrics_instance = CacheMetrics()
+    return _metrics_instance

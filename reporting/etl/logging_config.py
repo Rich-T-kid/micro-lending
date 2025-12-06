@@ -166,24 +166,31 @@ class ETLLogger:
     
     def log_error_to_db(self, error_type: str, error_code: str, message: str,
                         source_table: str = None, record_id: str = None, 
-                        data: Dict = None, step_id: int = None):
+                        data: Dict = None, step_id: int = None,
+                        severity: str = 'ERROR', process_name: str = 'etl',
+                        stack_trace: str = None):
         if not self.db_config or not self.run_id:
             return
         
         import pymysql
         from pymysql.cursors import DictCursor
         
+        valid_severities = ['INFO', 'WARNING', 'ERROR', 'CRITICAL']
+        severity = severity.upper() if severity.upper() in valid_severities else 'ERROR'
+        
         try:
             conn = pymysql.connect(**self.db_config, cursorclass=DictCursor)
             with conn.cursor() as cursor:
                 cursor.execute("""
                     INSERT INTO etl_error_log 
-                    (run_id, step_id, error_type, error_code, error_message,
-                     source_table, source_record_id, error_data)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    (run_id, step_id, error_type, error_code, severity, process_name,
+                     error_message, source_table, source_record_id, error_data,
+                     stack_trace, correlation_id)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, (
-                    self.run_id, step_id, error_type, error_code, message,
-                    source_table, record_id, json.dumps(data) if data else None
+                    self.run_id, step_id, error_type, error_code, severity, process_name,
+                    message, source_table, record_id, json.dumps(data) if data else None,
+                    stack_trace, self.correlation_id
                 ))
                 conn.commit()
         except pymysql.Error as e:

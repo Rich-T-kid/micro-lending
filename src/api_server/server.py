@@ -17,11 +17,12 @@ sys.path.insert(0, os.path.dirname(__file__))
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 import models
 try:
-    from cache import get_redis_client, CacheKeyBuilder, ANALYTICS_TTL
+    from cache import get_redis_client, CacheKeyBuilder, ANALYTICS_TTL, get_cache_metrics
     REDIS_AVAILABLE = True
 except ImportError:
     REDIS_AVAILABLE = False
     def get_redis_client(): return None
+    def get_cache_metrics(): return None
 
 # source .venv/bin/activate
 
@@ -1032,21 +1033,82 @@ async def create_loan_offer(
 
 @app.post("/loan-offers/{offer_id}/accept", response_model=models.LoanResponse)
 async def accept_loan_offer(offer_id: int):
-    """Accept loan offer (Borrower)"""
+    """Accept loan offer (Borrower) - creates a loan from the accepted offer"""
     session = db.get_session()
     try:
-        return models.LoanResponse(
-            loan_id=12345,
-            borrower_id=1,
-            lender_id=2,
-            principal_amount=5000.00,
-            interest_rate=12.5,
-            term_months=24,
-            status="active",
-            balance_remaining=5000.00,
-            created_at="2025-10-21T12:00:00Z"
+        # Get the offer with application details
+        offer = session.query(models.LoanOffer).filter(
+            models.LoanOffer.offer_id == offer_id
+        ).first()
+        
+        if not offer:
+            raise HTTPException(status_code=404, detail="Loan offer not found")
+        
+        if offer.status != 'PENDING':
+            raise HTTPException(status_code=400, detail=f"Offer is {offer.status}, cannot accept")
+        
+        # Get the application to find borrower
+        application = session.query(models.LoanApplication).filter(
+            models.LoanApplication.app_id == offer.app_id
+        ).first()
+        
+        if not application:
+            raise HTTPException(status_code=404, detail="Application not found")
+        
+        # Check if loan already exists for this offer
+        existing_loan = session.query(models.Loan).filter(
+            models.Loan.offer_id == offer_id
+        ).first()
+        
+        if existing_loan:
+            raise HTTPException(status_code=400, detail="Loan already created for this offer")
+        
+        from datetime import date
+        from dateutil.relativedelta import relativedelta
+        
+        # Create the loan from the offer
+        start_date = date.today()
+        maturity_date = start_date + relativedelta(months=offer.term_months)
+        
+        new_loan = models.Loan(
+            app_id=offer.app_id,
+            offer_id=offer.offer_id,
+            borrower_id=application.applicant_id,
+            lender_type=offer.lender_type,
+            lender_id=offer.lender_id,
+            currency_code=offer.currency_code,
+            origination_fee=offer.fees_flat or 0,
+            start_date=start_date,
+            maturity_date=maturity_date,
+            status='ACTIVE'
         )
+        
+        session.add(new_loan)
+        
+        # Update offer status to accepted
+        offer.status = 'ACCEPTED'
+        
+        # Update application status
+        application.status = 'approved'
+        
+        session.commit()
+        session.refresh(new_loan)
+        
+        return models.LoanResponse(
+            loan_id=new_loan.loan_id,
+            borrower_id=new_loan.borrower_id,
+            lender_id=new_loan.lender_id,
+            principal_amount=float(offer.principal_amount),
+            interest_rate=float(offer.interest_rate_apr),
+            term_months=offer.term_months,
+            status=new_loan.status.lower(),
+            balance_remaining=float(offer.principal_amount),
+            created_at=str(new_loan.start_date)
+        )
+    except HTTPException:
+        raise
     except Exception as e:
+        session.rollback()
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         session.close()
@@ -1275,7 +1337,8 @@ async def get_portfolio_summary(user_id: int):
         # Get all loans where user is lender - REFACTORED 3NF: JOIN with loan_offer
         loans_with_terms = session.query(
             models.Loan,
-            models.LoanOffer.principal_amount
+            models.LoanOffer.principal_amount,
+            models.LoanOffer.interest_rate_apr
         ).join(
             models.LoanOffer, models.Loan.offer_id == models.LoanOffer.offer_id
         ).filter(models.Loan.lender_id == user_id).all()
@@ -1283,12 +1346,13 @@ async def get_portfolio_summary(user_id: int):
         total_invested = sum(float(loan_with_terms[1]) for loan_with_terms in loans_with_terms)
         active_loans = len([lt for lt in loans_with_terms if lt[0].status == 'ACTIVE'])
         
-        # Calculate total earned (simplified - sum of all interest payments)
+        # Calculate total earned using actual interest rate from loan_offer
         total_earned = 0
         for loan_with_terms in loans_with_terms:
             loan = loan_with_terms[0]
+            interest_rate = float(loan_with_terms[2]) / 100  # APR from loan_offer
             payments = session.query(models.Repayment).filter(models.Repayment.loan_id == loan.loan_id).all()
-            total_earned += sum(payment.amount * 0.05 for payment in payments)  # Simplified: 5% as interest
+            total_earned += sum(float(payment.amount) * interest_rate for payment in payments)
         
         # Calculate default rate
         loans_only = [lt[0] for lt in loans_with_terms]
@@ -1544,24 +1608,31 @@ async def get_admin_dashboard(credentials: HTTPAuthorizationCredentials = Depend
             models.LoanApplication.status == 'pending'
         ).count()
         
-        # Get total loan volume - REFACTORED 3NF: JOIN with loan_offer
+        # Get total loan volume - REFACTORED 3NF: JOIN with loan_offer to get actual rates
         loans_with_terms = session.query(
             models.Loan,
-            models.LoanOffer.principal_amount
+            models.LoanOffer.principal_amount,
+            models.LoanOffer.interest_rate_apr
         ).join(
             models.LoanOffer, models.Loan.offer_id == models.LoanOffer.offer_id
         ).all()
         
         total_loan_volume = sum(float(lt[1]) for lt in loans_with_terms)
         
-        # Calculate revenue this month (simplified - sum of interest payments)
+        # Calculate revenue this month using actual interest rates from loan_offer
         from datetime import datetime, timedelta
         current_month_start = datetime.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         
-        monthly_payments = session.query(models.Repayment).filter(
-            models.Repayment.created_at >= current_month_start
-        ).all()
-        revenue_this_month = sum(payment.amount * 0.05 for payment in monthly_payments)  # 5% estimated interest
+        # Join repayments with loans and offers to get actual interest rate
+        revenue_this_month = 0.0
+        for lt in loans_with_terms:
+            loan = lt[0]
+            interest_rate = float(lt[2]) / 100  # APR from loan_offer
+            loan_payments = session.query(models.Repayment).filter(
+                models.Repayment.loan_id == loan.loan_id,
+                models.Repayment.created_at >= current_month_start
+            ).all()
+            revenue_this_month += sum(float(p.amount) * interest_rate for p in loan_payments)
         
         # Calculate default rate
         loans_only = [lt[0] for lt in loans_with_terms]
@@ -1885,10 +1956,11 @@ async def get_platform_metrics(
         total_loan_volume = sum(float(lt[1]) for lt in loans_with_terms) if loans_with_terms else 0
         average_loan_size = total_loan_volume / total_loans_originated if total_loans_originated > 0 else 0
         
-        # Calculate default rate
+        # Calculate default rate - include interest_rate_apr for revenue calculation
         all_loans_with_terms = session.query(
             models.Loan,
-            models.LoanOffer.principal_amount
+            models.LoanOffer.principal_amount,
+            models.LoanOffer.interest_rate_apr
         ).join(
             models.LoanOffer, models.Loan.offer_id == models.LoanOffer.offer_id
         ).all()
@@ -1897,12 +1969,18 @@ async def get_platform_metrics(
         defaulted_loans = len([loan for loan in all_loans if loan.status == 'DEFAULTED'])
         default_rate = defaulted_loans / len(all_loans) if all_loans else 0
         
-        # Calculate revenue
+        # Calculate revenue using actual interest rates from loan_offer
         payments_in_period = session.query(models.Repayment).filter(
             models.Repayment.created_at >= date_from,
             models.Repayment.created_at <= date_to
         ).all()
-        revenue_generated = sum(payment.amount * 0.05 for payment in payments_in_period)  # 5% estimated interest
+        
+        # Build loan_id to interest_rate mapping
+        loan_rates = {lt[0].loan_id: float(lt[2]) / 100 for lt in all_loans_with_terms}
+        revenue_generated = sum(
+            float(payment.amount) * loan_rates.get(payment.loan_id, 0.0) 
+            for payment in payments_in_period
+        )
         
         # Get user metrics
         active_users = session.query(models.UserAccount).filter(
@@ -1944,24 +2022,46 @@ async def generate_revenue_report(
         end_date = datetime.now()
         start_date = end_date - timedelta(days=365)
         
+        # Get all loans with their interest rates for revenue calculation
+        all_loans_with_rates = session.query(
+            models.Loan,
+            models.LoanOffer.interest_rate_apr,
+            models.LoanOffer.fees_percent
+        ).join(
+            models.LoanOffer, models.Loan.offer_id == models.LoanOffer.offer_id
+        ).all()
+        
+        # Build loan_id to rates mapping
+        loan_rates = {lt[0].loan_id: float(lt[1]) / 100 for lt in all_loans_with_rates}
+        loan_fees = {lt[0].loan_id: float(lt[2] or 0) / 100 for lt in all_loans_with_rates}
+        
         payments = session.query(models.Repayment).filter(
             models.Repayment.created_at >= start_date,
             models.Repayment.created_at <= end_date
         ).all()
         
-        # Calculate totals
-        total_revenue = sum(payment.amount * 0.05 for payment in payments)  # 5% estimated interest
-        fee_revenue = total_revenue * 0.6  # Simplified: 60% from fees
-        interest_revenue = total_revenue * 0.4  # Simplified: 40% from interest
+        # Calculate totals using actual interest rates from loan_offer
+        interest_revenue = sum(
+            float(payment.amount) * loan_rates.get(payment.loan_id, 0.0)
+            for payment in payments
+        )
+        fee_revenue = sum(
+            float(payment.amount) * loan_fees.get(payment.loan_id, 0.0)
+            for payment in payments
+        )
+        total_revenue = interest_revenue + fee_revenue
         
-        # Create breakdown data (simplified monthly breakdown)
+        # Create breakdown data using actual rates
         breakdown_data = []
         if breakdown_by == "month":
             for i in range(12):
                 month_start = start_date + timedelta(days=30*i)
                 month_end = start_date + timedelta(days=30*(i+1))
                 month_payments = [p for p in payments if month_start <= p.created_at < month_end]
-                month_revenue = sum(p.amount * 0.05 for p in month_payments)
+                month_revenue = sum(
+                    float(p.amount) * loan_rates.get(p.loan_id, 0.0)
+                    for p in month_payments
+                )
                 breakdown_data.append({
                     "period": month_start.strftime('%Y-%m'),
                     "revenue": month_revenue
@@ -2510,76 +2610,111 @@ async def demo_constraint_violation(violation_type: str = "negative_balance"):
 # CACHE & REFERENCE DATA ENDPOINTS
 # =============================================================================
 
-REFERENCE_TTL = 3600
+# Cache TTL loaded from environment variable for configurability
+REFERENCE_TTL = int(os.getenv('CACHE_REFERENCE_TTL', 3600))  # 1 hour default
+TRANSACTION_TTL = int(os.getenv('CACHE_TRANSACTION_TTL', 300))  # 5 minutes default
 
 class ReferenceDataResponse(BaseModel):
     type: str
     data: List[Dict[str, Any]]
     cached: bool
     ttl: Optional[int] = None
+    latency_ms: Optional[float] = None
 
 @app.get("/cache/reference/{ref_type}", response_model=ReferenceDataResponse)
 async def get_reference_data(ref_type: str):
-    """Get cached reference data (currencies, loan_types, regions, credit_tiers)"""
+    """Get cached reference data (currencies, loan_types, regions, credit_tiers)
+    
+    Data is loaded from database reference tables on cache miss, demonstrating
+    the cache-aside pattern with actual database integration.
+    """
+    import time
+    start_time = time.time()
+    
     valid_types = ['currencies', 'loan_types', 'regions', 'credit_tiers', 'loan_statuses']
     if ref_type not in valid_types:
         raise HTTPException(status_code=400, detail=f"Invalid type. Must be one of: {valid_types}")
     
     redis = get_redis_client()
+    metrics = get_cache_metrics()
     cache_key = f"ml:reference:{ref_type}"
     
     cached_data = redis.get_json(cache_key)
     if cached_data:
+        latency_ms = (time.time() - start_time) * 1000
         ttl = redis.ttl(cache_key)
-        return ReferenceDataResponse(type=ref_type, data=cached_data, cached=True, ttl=ttl)
+        # Record cache hit with latency
+        if metrics:
+            metrics.record_hit(operation=f'reference:{ref_type}', latency_ms=latency_ms)
+        return ReferenceDataResponse(type=ref_type, data=cached_data, cached=True, ttl=ttl, latency_ms=round(latency_ms, 2))
     
-    if ref_type == 'currencies':
-        data = [
-            {'code': 'USD', 'name': 'US Dollar', 'symbol': '$'},
-            {'code': 'EUR', 'name': 'Euro', 'symbol': '€'},
-            {'code': 'GBP', 'name': 'British Pound', 'symbol': '£'},
-            {'code': 'JPY', 'name': 'Japanese Yen', 'symbol': '¥'},
-            {'code': 'CAD', 'name': 'Canadian Dollar', 'symbol': 'C$'}
-        ]
-    elif ref_type == 'loan_types':
-        data = [
-            {'code': 'PERSONAL', 'name': 'Personal Loan', 'min_amount': 1000, 'max_amount': 50000, 'base_rate': 8.5},
-            {'code': 'BUSINESS', 'name': 'Business Loan', 'min_amount': 5000, 'max_amount': 250000, 'base_rate': 7.0},
-            {'code': 'MICRO', 'name': 'Micro Loan', 'min_amount': 100, 'max_amount': 5000, 'base_rate': 12.0},
-            {'code': 'EMERGENCY', 'name': 'Emergency Loan', 'min_amount': 500, 'max_amount': 10000, 'base_rate': 15.0}
-        ]
-    elif ref_type == 'regions':
-        data = [
-            {'code': 'NA', 'name': 'North America', 'country': 'USA'},
-            {'code': 'EU', 'name': 'Europe', 'country': 'Various'},
-            {'code': 'APAC', 'name': 'Asia Pacific', 'country': 'Various'},
-            {'code': 'LATAM', 'name': 'Latin America', 'country': 'Various'}
-        ]
-    elif ref_type == 'credit_tiers':
-        data = [
-            {'code': 'EXCELLENT', 'name': 'Excellent', 'min_score': 750, 'max_score': 850, 'rate_adjustment': -1.0},
-            {'code': 'GOOD', 'name': 'Good', 'min_score': 650, 'max_score': 749, 'rate_adjustment': 0.0},
-            {'code': 'FAIR', 'name': 'Fair', 'min_score': 550, 'max_score': 649, 'rate_adjustment': 2.0},
-            {'code': 'POOR', 'name': 'Poor', 'min_score': 300, 'max_score': 549, 'rate_adjustment': 5.0}
-        ]
-    elif ref_type == 'loan_statuses':
-        data = [
-            {'code': 'pending', 'name': 'Pending'},
-            {'code': 'approved', 'name': 'Approved'},
-            {'code': 'active', 'name': 'Active'},
-            {'code': 'paid_off', 'name': 'Paid Off'},
-            {'code': 'defaulted', 'name': 'Defaulted'}
-        ]
-    else:
+    # Cache miss - load from database reference tables
+    data = []
+    session = db.get_session()
+    try:
+        if ref_type == 'currencies':
+            # Load from ref_currency table
+            result = session.execute(text("""
+                SELECT currency_code as code, currency_name as name, symbol
+                FROM ref_currency WHERE is_active = TRUE
+            """))
+            data = [dict(row._mapping) for row in result.fetchall()]
+        elif ref_type == 'loan_types':
+            # Load from ref_loan_product table
+            result = session.execute(text("""
+                SELECT product_code as code, product_name as name, 
+                       min_amount, max_amount, base_interest_rate as base_rate, category
+                FROM ref_loan_product WHERE is_active = TRUE
+            """))
+            data = [dict(row._mapping) for row in result.fetchall()]
+            # Convert Decimal to float for JSON
+            for item in data:
+                for key in ['min_amount', 'max_amount', 'base_rate']:
+                    if key in item and item[key] is not None:
+                        item[key] = float(item[key])
+        elif ref_type == 'regions':
+            # Load from ref_region table
+            result = session.execute(text("""
+                SELECT region_code as code, region_name as name, region_type, timezone
+                FROM ref_region WHERE is_active = TRUE
+            """))
+            data = [dict(row._mapping) for row in result.fetchall()]
+        elif ref_type == 'credit_tiers':
+            # Load from ref_credit_tier table
+            result = session.execute(text("""
+                SELECT tier_code as code, tier_name as name, 
+                       min_score, max_score, risk_weight as rate_adjustment
+                FROM ref_credit_tier
+            """))
+            data = [dict(row._mapping) for row in result.fetchall()]
+            # Convert Decimal to float
+            for item in data:
+                if 'rate_adjustment' in item and item['rate_adjustment'] is not None:
+                    item['rate_adjustment'] = float(item['rate_adjustment'])
+        elif ref_type == 'loan_statuses':
+            # Load from dim_loan_status table
+            result = session.execute(text("SELECT status_code, status_name FROM dim_loan_status ORDER BY status_key"))
+            data = [{'code': row[0], 'name': row[1]} for row in result]
+    except Exception as e:
+        # Log error and return empty list
+        import logging
+        logging.error(f"Failed to load reference data '{ref_type}' from database: {e}")
         data = []
+    finally:
+        session.close()
     
+    latency_ms = (time.time() - start_time) * 1000
     redis.set_json(cache_key, data, REFERENCE_TTL)
-    return ReferenceDataResponse(type=ref_type, data=data, cached=False, ttl=REFERENCE_TTL)
+    # Record cache miss with DB latency
+    if metrics:
+        metrics.record_miss(operation=f'reference:{ref_type}', latency_ms=latency_ms)
+    return ReferenceDataResponse(type=ref_type, data=data, cached=False, ttl=REFERENCE_TTL, latency_ms=round(latency_ms, 2))
 
 @app.delete("/cache/reference/{ref_type}")
 async def invalidate_reference_cache(ref_type: str):
     """Invalidate reference data cache"""
     redis = get_redis_client()
+    metrics = get_cache_metrics()
     if ref_type == 'all':
         ref_keys = redis.keys('ml:reference:*')
         tx_keys = redis.keys('ml:transactions:*')
@@ -2587,11 +2722,59 @@ async def invalidate_reference_cache(ref_type: str):
         if all_keys:
             for k in all_keys:
                 redis.delete(k)
+        # Record invalidation
+        if metrics:
+            metrics.record_invalidation(operation='reference:all', keys_invalidated=len(all_keys))
         return {"invalidated": len(all_keys)}
     
     cache_key = f"ml:reference:{ref_type}"
     deleted = redis.delete(cache_key)
+    # Record invalidation
+    if metrics and deleted > 0:
+        metrics.record_invalidation(operation=f'reference:{ref_type}', keys_invalidated=deleted)
     return {"invalidated": deleted}
+
+
+# =============================================================================
+# CACHE METRICS ENDPOINTS
+# =============================================================================
+
+class CacheMetricsResponse(BaseModel):
+    timestamp: str
+    minute_key: str
+    current_minute: Dict[str, Any]
+    totals: Dict[str, Any]
+    latency: Dict[str, Any]
+    errors_per_minute: int
+
+class HourlyMetricsResponse(BaseModel):
+    hours: int
+    data: List[Dict[str, Any]]
+
+@app.get("/cache/metrics", response_model=CacheMetricsResponse)
+async def get_cache_metrics_endpoint():
+    """Get current cache metrics (hits, misses, latency, error rates)"""
+    metrics = get_cache_metrics()
+    if not metrics:
+        raise HTTPException(status_code=503, detail="Metrics not available")
+    return metrics.get_current_stats()
+
+@app.get("/cache/metrics/hourly", response_model=HourlyMetricsResponse)
+async def get_hourly_metrics(hours: int = Query(24, ge=1, le=168)):
+    """Get hourly cache metrics for the last N hours"""
+    metrics = get_cache_metrics()
+    if not metrics:
+        raise HTTPException(status_code=503, detail="Metrics not available")
+    return {"hours": hours, "data": metrics.get_hourly_stats(hours)}
+
+@app.delete("/cache/metrics")
+async def reset_cache_metrics():
+    """Reset all cache metrics (for testing)"""
+    metrics = get_cache_metrics()
+    if not metrics:
+        raise HTTPException(status_code=503, detail="Metrics not available")
+    deleted = metrics.reset_metrics()
+    return {"reset": True, "keys_deleted": deleted}
 
 
 # =============================================================================
@@ -2617,6 +2800,7 @@ class PaginatedTransactionsResponse(BaseModel):
     cached: bool
     has_next: bool
     has_prev: bool
+    latency_ms: Optional[float] = None
 
 @app.get("/reporting/transactions", response_model=PaginatedTransactionsResponse)
 async def get_transactions(
@@ -2626,12 +2810,21 @@ async def get_transactions(
     borrower_id: Optional[int] = None
 ):
     """Get paginated loan transactions with caching and look-ahead"""
+    import time
+    start_time = time.time()
+    
     redis = get_redis_client()
+    metrics = get_cache_metrics()
     cache_key = f"ml:transactions:p{page}:s{page_size}:st{status or 'all'}:b{borrower_id or 'all'}"
     
     cached_data = redis.get_json(cache_key)
     if cached_data:
+        latency_ms = (time.time() - start_time) * 1000
         cached_data['cached'] = True
+        cached_data['latency_ms'] = round(latency_ms, 2)
+        # Record cache hit
+        if metrics:
+            metrics.record_hit(operation='transactions', latency_ms=latency_ms)
         return PaginatedTransactionsResponse(**cached_data)
     
     session = db.get_session()
@@ -2688,8 +2881,13 @@ async def get_transactions(
             'data': [r.model_dump() for r in rows],
             'cached': False,
             'has_next': page < total_pages,
-            'has_prev': page > 1
+            'has_prev': page > 1,
+            'latency_ms': round((time.time() - start_time) * 1000, 2)
         }
+        
+        # Record cache miss with DB latency
+        if metrics:
+            metrics.record_miss(operation='transactions', latency_ms=response_data['latency_ms'])
         
         redis.set_json(cache_key, response_data, 300)
         

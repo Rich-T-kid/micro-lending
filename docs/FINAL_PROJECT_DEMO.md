@@ -385,10 +385,70 @@ redis-cli KEYS 'ml:transactions:*' | head -1 | xargs redis-cli TTL
 redis-cli INFO memory | grep used_memory_human
 ```
 
-### Step 11.4: Cache Hit/Miss Stats
+### Step 11.4: Cache Hit/Miss Stats (Server Level)
 ```bash
 redis-cli INFO stats | grep -E "keyspace_hits|keyspace_misses"
 ```
+
+---
+
+## REQUIREMENT 12: PERSISTED CACHE METRICS (TIME-SERIES STORE)
+
+This section demonstrates that cache metrics (hits, misses, latency, errors per minute) are persisted to Redis as a time-series store, not just tracked in-session.
+
+### Step 12.1: Get Current Metrics Summary
+```bash
+curl -s http://localhost:8000/cache/metrics | python3 -m json.tool
+```
+
+Response includes:
+- `current_minute`: hits, misses, errors, requests, hit_ratio for the current minute
+- `totals`: all-time cumulative statistics
+- `latency`: average cache vs DB latency with speedup factor
+- `errors_per_minute`: current minute's error count
+
+### Step 12.2: View Persisted Metrics Keys in Redis
+```bash
+redis-cli KEYS 'ml:metrics:*'
+```
+
+Expected keys:
+- `ml:metrics:hits:minute:YYYYMMDDHHMM` - Minute-level hit counts
+- `ml:metrics:hits:hour:YYYYMMDDHH` - Hourly hit aggregates
+- `ml:metrics:hits:total` - All-time totals
+- `ml:metrics:misses:*` - Same pattern for misses
+- `ml:metrics:errors:*` - Same pattern for errors
+- `ml:metrics:latency:cache:*` - Cache latency samples
+- `ml:metrics:latency:db:*` - DB latency samples
+
+### Step 12.3: View Hit Counts by Operation
+```bash
+redis-cli HGETALL 'ml:metrics:hits:total'
+```
+
+Shows hits broken down by operation type (e.g., `reference:currencies`, `transactions`).
+
+### Step 12.4: View Miss Counts by Operation
+```bash
+redis-cli HGETALL 'ml:metrics:misses:total'
+```
+
+### Step 12.5: Get Hourly Metrics (Last 3 Hours)
+```bash
+curl -s "http://localhost:8000/cache/metrics/hourly?hours=3" | python3 -m json.tool
+```
+
+Returns hourly breakdown with:
+- `hits`, `misses`, `errors`, `requests` per hour
+- `hit_ratio` percentage
+- `error_rate` percentage
+
+### Step 12.6: Reset Metrics (For Testing)
+```bash
+curl -X DELETE http://localhost:8000/cache/metrics
+```
+
+Clears all metrics for fresh testing.
 
 ---
 

@@ -6,6 +6,7 @@ import sys
 import argparse
 import logging
 import json
+import traceback
 from datetime import datetime
 from typing import Dict, Optional
 from pathlib import Path
@@ -16,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from reporting.etl.extract import Extractor, ExtractResult
 from reporting.etl.transform import Transformer, TransformResult
 from reporting.etl.load import Loader, LoadResult
+from reporting.etl.logging_config import ETLLogger, ETLMetrics
 
 LOG_DIR = Path(__file__).parent.parent.parent / 'logs'
 LOG_DIR.mkdir(exist_ok=True)
@@ -52,6 +54,7 @@ class ETLOrchestrator:
         self.config = get_db_config()
         self.run_id = None
         self.logger = None
+        self.etl_logger = None  # Structured logger with correlation ID
         self.metrics = {
             'started_at': None,
             'completed_at': None,
@@ -76,6 +79,11 @@ class ETLOrchestrator:
                 self.run_id = cursor.lastrowid
         finally:
             conn.close()
+        
+        # Initialize structured logger with correlation ID
+        self.etl_logger = ETLLogger(run_id=self.run_id)
+        self.etl_logger.set_db_config(self.config)
+        self.etl_logger.info(f"ETL Run {self.run_id} started (mode={self.mode})", step='init')
         
         return self.run_id
 
@@ -124,7 +132,25 @@ class ETLOrchestrator:
             conn.close()
 
     def log_error(self, error_type: str, error_code: str, message: str,
-                  source_table: str = None, record_id: str = None, data: Dict = None):
+                  source_table: str = None, record_id: str = None, data: Dict = None,
+                  severity: str = 'ERROR', process_name: str = 'etl_orchestrator'):
+        """Log error using structured logger with severity and process metadata."""
+        # Use structured logger if available
+        if self.etl_logger:
+            self.etl_logger.log_error_to_db(
+                error_type=error_type,
+                error_code=error_code,
+                message=message,
+                source_table=source_table,
+                record_id=record_id,
+                data=data,
+                severity=severity,
+                process_name=process_name,
+                stack_trace=traceback.format_exc() if severity == 'CRITICAL' else None
+            )
+            return
+        
+        # Fallback to direct insert if structured logger not initialized
         import pymysql
         from pymysql.cursors import DictCursor
         
@@ -133,17 +159,19 @@ class ETLOrchestrator:
             with conn.cursor() as cursor:
                 cursor.execute("""
                     INSERT INTO etl_error_log 
-                    (run_id, error_type, error_code, error_message, 
-                     source_table, source_record_id, error_data)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                """, (self.run_id, error_type, error_code, message,
-                      source_table, record_id, json.dumps(data) if data else None))
+                    (run_id, error_type, error_code, severity, process_name,
+                     error_message, source_table, source_record_id, error_data)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (self.run_id, error_type, error_code, severity, process_name,
+                      message, source_table, record_id, json.dumps(data) if data else None))
                 conn.commit()
         finally:
             conn.close()
 
     def run_extract(self) -> Dict[str, ExtractResult]:
         self.logger.info(f"Starting extract phase ({self.mode} mode), batch_size={self.batch_size}")
+        if self.etl_logger:
+            self.etl_logger.info(f"Starting extract phase ({self.mode} mode)", step='extract')
         start_time = datetime.now()
         
         extractor = Extractor(self.config, batch_size=self.batch_size)

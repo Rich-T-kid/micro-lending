@@ -31,9 +31,15 @@ class Extractor:
         self.batch_size = batch_size
 
     def connect(self):
+        """Connect to database using provided config - no hardcoded defaults."""
+        if not self.config.get('host'):
+            raise ValueError("Database host is required - set MYSQL_HOST environment variable")
+        if not self.config.get('user'):
+            raise ValueError("Database user is required - set MYSQL_USER environment variable")
+            
         self.connection = pymysql.connect(
-            host=self.config.get('host', 'localhost'),
-            user=self.config.get('user', 'root'),
+            host=self.config['host'],
+            user=self.config['user'],
             password=self.config.get('password', ''),
             database=self.config.get('database', 'microlending'),
             cursorclass=DictCursor
@@ -62,6 +68,15 @@ class Extractor:
             """, (value, run_id, source, table))
             self.connection.commit()
 
+    def _get_source_for_table(self, table: str) -> str:
+        """Determine source system based on table name prefix."""
+        if table.startswith('ref_'):
+            return 'reference_db'
+        elif table.startswith('market_'):
+            return 'market_db'
+        else:
+            return 'transaction_db'
+
     def extract_full(self, table: str, columns: str = "*") -> ExtractResult:
         start_time = datetime.now()
         rows = []
@@ -78,10 +93,11 @@ class Extractor:
                 rows.extend(batch)
         
         extract_time = (datetime.now() - start_time).total_seconds()
-        logger.info(f"Full extract from {table}: {len(rows)} rows in {extract_time:.2f}s")
+        source = self._get_source_for_table(table)
+        logger.info(f"Full extract from {source}.{table}: {len(rows)} rows in {extract_time:.2f}s")
         
         return ExtractResult(
-            source='transaction_db',
+            source=source,
             table=table,
             rows=rows,
             row_count=len(rows),
@@ -115,10 +131,11 @@ class Extractor:
                 max_timestamp = result['max_ts'] if result else watermark
         
         extract_time = (datetime.now() - start_time).total_seconds()
-        logger.info(f"Incremental extract from {table}: {len(rows)} rows in {extract_time:.2f}s")
+        source = self._get_source_for_table(table)
+        logger.info(f"Incremental extract from {source}.{table}: {len(rows)} rows in {extract_time:.2f}s")
         
         return ExtractResult(
-            source='transaction_db',
+            source=source,
             table=table,
             rows=rows,
             row_count=len(rows),
@@ -249,6 +266,7 @@ class Extractor:
 
     def run_extract(self, mode: str = 'full', run_id: int = None) -> Dict[str, ExtractResult]:
         results = {}
+        watermarks_to_update = []  # Track watermarks for update after successful extract
         
         # Transaction DB extracts
         if mode == 'incremental':
@@ -263,12 +281,28 @@ class Extractor:
             results['applications'] = self.extract_loan_applications('incremental', app_wm)
             results['transactions'] = self.extract_transactions('incremental', txn_wm)
             results['repayments'] = self.extract_repayments('incremental', repay_wm)
+            
+            # Track watermarks that need updating (only if rows were extracted)
+            if results['users'].watermark:
+                watermarks_to_update.append(('transaction_db', 'user', results['users'].watermark))
+            if results['loans'].watermark:
+                watermarks_to_update.append(('transaction_db', 'loan', results['loans'].watermark))
+            if results['applications'].watermark:
+                watermarks_to_update.append(('transaction_db', 'loan_application', results['applications'].watermark))
+            if results['transactions'].watermark:
+                watermarks_to_update.append(('transaction_db', 'transaction_ledger', results['transactions'].watermark))
+            if results['repayments'].watermark:
+                watermarks_to_update.append(('transaction_db', 'repayment_schedule', results['repayments'].watermark))
         else:
             results['users'] = self.extract_users('full')
             results['loans'] = self.extract_loans('full')
             results['applications'] = self.extract_loan_applications('full')
             results['transactions'] = self.extract_transactions('full')
             results['repayments'] = self.extract_repayments('full')
+            
+            # For full load, update watermarks to current max timestamps
+            if run_id:
+                self._update_full_load_watermarks(run_id)
 
         # Reference DB extracts (always full)
         results['currencies'] = self.extract_reference_currencies()
@@ -281,7 +315,35 @@ class Extractor:
         results['benchmarks'] = self.extract_market_benchmarks()
         results['spreads'] = self.extract_market_spreads()
 
+        # Update watermarks for incremental extracts
+        if run_id and watermarks_to_update:
+            for source, table, watermark in watermarks_to_update:
+                self.update_watermark(source, table, watermark, run_id)
+                logger.info(f"Updated watermark for {source}.{table} to {watermark}")
+
         total_rows = sum(r.row_count for r in results.values())
         logger.info(f"Extract complete: {total_rows} total rows from {len(results)} sources")
         
         return results
+
+    def _update_full_load_watermarks(self, run_id: int):
+        """Update watermarks to current max timestamps after full load."""
+        watermark_queries = [
+            ('transaction_db', 'user', 'SELECT MAX(updated_at) FROM user'),
+            ('transaction_db', 'loan', 'SELECT MAX(updated_at) FROM loan'),
+            ('transaction_db', 'loan_application', 'SELECT MAX(updated_at) FROM loan_application'),
+            ('transaction_db', 'transaction_ledger', 'SELECT MAX(created_at) FROM transaction_ledger'),
+            ('transaction_db', 'repayment_schedule', 'SELECT MAX(updated_at) FROM repayment_schedule'),
+        ]
+        
+        with self.connection.cursor() as cursor:
+            for source, table, query in watermark_queries:
+                try:
+                    cursor.execute(query)
+                    result = cursor.fetchone()
+                    max_ts = list(result.values())[0] if result else None
+                    if max_ts:
+                        self.update_watermark(source, table, max_ts, run_id)
+                        logger.info(f"Full load: Updated watermark for {source}.{table} to {max_ts}")
+                except Exception as e:
+                    logger.warning(f"Could not update watermark for {source}.{table}: {e}")

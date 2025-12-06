@@ -42,6 +42,11 @@ class Transformer:
         self.product_key_map = {}
         self.currency_key_map = {}
         self.status_key_map = {}
+        
+        # Valid values loaded from reference data or dim tables during run_transform
+        # These replace hardcoded lists - populated by run_transform before processing
+        self.valid_loan_statuses = []
+        self.valid_user_roles = []
 
     def validate_not_null(self, row: Dict, fields: List[str], table: str) -> List[ValidationError]:
         errors = []
@@ -184,7 +189,8 @@ class Transformer:
         errors = []
         rejected = 0
         
-        valid_roles = ['borrower', 'lender', 'admin']
+        # Use loaded valid roles instead of hardcoded list
+        valid_roles = self.valid_user_roles if self.valid_user_roles else ['borrower', 'lender', 'admin']
         total_users = len(users)
         
         # Process in batches
@@ -244,9 +250,18 @@ class Transformer:
         errors = []
         rejected = 0
         
-        valid_statuses = ['pending', 'approved', 'rejected', 'withdrawn', 
-                         'active', 'paid_off', 'defaulted', 'cancelled']
+        # Use loaded valid statuses instead of hardcoded list
+        valid_statuses = self.valid_loan_statuses if self.valid_loan_statuses else [
+            'pending', 'approved', 'rejected', 'withdrawn', 
+            'active', 'paid_off', 'defaulted', 'cancelled'
+        ]
         total_loans = len(loans)
+        
+        # Build product lookup for enrichment
+        products = self.reference_data.get('products', {})
+        fx_rates = self.market_data.get('fx_rates', {})
+        credit_spreads = self.market_data.get('spreads', {})
+        benchmarks = self.market_data.get('benchmarks', {})
         
         # Process in batches
         for batch_start in range(0, total_loans, self.batch_size):
@@ -278,6 +293,38 @@ class Transformer:
                 principal = Decimal(str(loan['principal_amount']))
                 interest_rate = Decimal(str(loan['interest_rate']))
                 term_months = Decimal(str(loan['term_months']))
+                
+                # Enrich with product reference data
+                product_code = loan.get('product_code')
+                product_info = products.get(product_code, {})
+                product_category = product_info.get('category', 'personal')
+                
+                # Enrich with market data - FX conversion
+                # Validate currency against reference data and get FX rate from market data
+                currency = loan.get('currency_code', 'USD')
+                if currency != 'USD' and currency not in fx_rates:
+                    # Log warning but don't reject - FX rate missing for non-USD currency
+                    row_errors.append(ValidationError(
+                        table='loan',
+                        record_id=loan['id'],
+                        field='currency_code',
+                        error_type='MISSING_FX_RATE',
+                        message=f"FX rate not found for currency {currency}, using 1.0",
+                        value=currency
+                    ))
+                fx_rate = Decimal(str(fx_rates.get(currency, 1.0))) if currency == 'USD' else Decimal(str(fx_rates.get(currency, 1.0)))
+                amount_usd = principal / fx_rate if fx_rate and fx_rate != 0 else principal
+                
+                # Enrich with credit spread if available
+                credit_tier = loan.get('credit_tier_code', 'PRIME')
+                spread_key = f"{credit_tier}:{product_category}"
+                credit_spread_bps = credit_spreads.get(spread_key, 0)
+                
+                # Enrich with benchmark rate if available  
+                benchmark_code = loan.get('benchmark_code', 'PRIME')
+                benchmark_rate = Decimal(str(benchmarks.get(benchmark_code, 0)))
+                effective_rate = interest_rate + (Decimal(credit_spread_bps) / Decimal('100'))
+                
                 interest_amount = principal * (interest_rate / Decimal('100')) * (term_months / Decimal('12'))
                 
                 transformed.append({
@@ -289,14 +336,20 @@ class Transformer:
                     'principal_amount': principal,
                     'interest_amount': round(interest_amount, 2),
                     'total_amount': principal + interest_amount,
-                    'amount_usd': self.convert_to_usd(principal, 'USD'),
+                    'amount_usd': round(amount_usd, 2),
                     'interest_rate': loan['interest_rate'],
+                    'effective_rate': float(effective_rate),
+                    'benchmark_rate': float(benchmark_rate),
+                    'credit_spread_bps': credit_spread_bps,
                     'term_months': loan['term_months'],
                     'term_category': self.get_term_category(loan['term_months']),
                     'outstanding_balance': loan.get('outstanding_balance', principal),
                     'status': loan.get('status', 'active'),
-                    'currency_code': 'USD',
-                    'fx_rate': Decimal('1.000000')
+                    'currency_code': currency,
+                    'fx_rate': fx_rate,
+                    'product_code': product_code,
+                    'product_category': product_category,
+                    'credit_tier': credit_tier
                 })
             
             if total_loans > self.batch_size:
@@ -398,21 +451,85 @@ class Transformer:
         # Build lookup sets for FK validation
         user_ids = {u['id'] for u in extract_results.get('users', {}).rows}
         
-        # Build FX rate lookup
+        # Build FX rate lookup from market data
         fx_rows = extract_results.get('fx_rates', {}).rows or []
-        self.market_data['fx_rates'] = {r['quote_currency']: r['rate'] for r in fx_rows}
+        self.market_data['fx_rates'] = {r['quote_currency']: float(r['rate']) for r in fx_rows}
+        logger.info(f"Loaded {len(self.market_data['fx_rates'])} FX rates for enrichment")
+        
+        # Build interest benchmark lookup from market data
+        benchmark_rows = extract_results.get('benchmarks', {}).rows or []
+        self.market_data['benchmarks'] = {r['benchmark_code']: float(r['rate']) for r in benchmark_rows}
+        logger.info(f"Loaded {len(self.market_data['benchmarks'])} interest benchmarks")
+        
+        # Build credit spread lookup from market data
+        spread_rows = extract_results.get('spreads', {}).rows or []
+        self.market_data['spreads'] = {}
+        for r in spread_rows:
+            key = f"{r['tier_code']}:{r['product_category']}"
+            self.market_data['spreads'][key] = int(r['spread_bps'])
+        logger.info(f"Loaded {len(self.market_data['spreads'])} credit spreads")
+        
+        # Build reference data lookups
+        product_rows = extract_results.get('products', {}).rows or []
+        self.reference_data['products'] = {p['product_code']: p for p in product_rows}
+        logger.info(f"Loaded {len(self.reference_data['products'])} product definitions")
+        
+        currency_rows = extract_results.get('currencies', {}).rows or []
+        self.reference_data['currencies'] = {c['currency_code']: c for c in currency_rows}
+        logger.info(f"Loaded {len(self.reference_data['currencies'])} currencies")
+        
+        tier_rows = extract_results.get('credit_tiers', {}).rows or []
+        self.reference_data['credit_tiers'] = {t['tier_code']: t for t in tier_rows}
+        logger.info(f"Loaded {len(self.reference_data['credit_tiers'])} credit tiers")
+        
+        region_rows = extract_results.get('regions', {}).rows or []
+        self.reference_data['regions'] = {r['region_code']: r for r in region_rows}
+        logger.info(f"Loaded {len(self.reference_data['regions'])} regions")
+        
+        # Load valid statuses from dim_loan_status if available
+        status_rows = extract_results.get('loan_statuses', {})
+        if hasattr(status_rows, 'rows') and status_rows.rows:
+            self.valid_loan_statuses = [s.get('status_code', s.get('code', '')) for s in status_rows.rows]
+        else:
+            # Fallback when dim_loan_status not in extract
+            self.valid_loan_statuses = ['pending', 'approved', 'rejected', 'withdrawn', 
+                                        'active', 'paid_off', 'defaulted', 'cancelled']
+        logger.info(f"Loaded {len(self.valid_loan_statuses)} valid loan statuses")
+        
+        # Load valid user roles
+        user_role_rows = extract_results.get('user_roles', {})
+        if hasattr(user_role_rows, 'rows') and user_role_rows.rows:
+            self.valid_user_roles = [r.get('role_code', r.get('code', '')) for r in user_role_rows.rows]
+        else:
+            self.valid_user_roles = ['borrower', 'lender', 'admin']
+        logger.info(f"Loaded {len(self.valid_user_roles)} valid user roles")
+        
+        # Run duplicate detection on source data
+        user_dup_errors = self.check_duplicates(
+            extract_results.get('users', {}).rows or [], 'id', 'user'
+        )
+        loan_dup_errors = self.check_duplicates(
+            extract_results.get('loans', {}).rows or [], 'id', 'loan'
+        )
+        if user_dup_errors:
+            logger.warning(f"Found {len(user_dup_errors)} duplicate users")
+        if loan_dup_errors:
+            logger.warning(f"Found {len(loan_dup_errors)} duplicate loans")
         
         # Transform dimensions
         results['dim_user'] = self.transform_users(extract_results.get('users', {}).rows or [])
+        results['dim_user'].errors.extend(user_dup_errors)
+        
         results['dim_loan_product'] = self.transform_products(
             extract_results.get('products', {}).rows or []
         )
         
-        # Transform facts
+        # Transform facts with enriched reference/market data
         results['fact_loan_transactions'] = self.transform_loans(
             extract_results.get('loans', {}).rows or [], 
             user_ids
         )
+        results['fact_loan_transactions'].errors.extend(loan_dup_errors)
         
         # Calculate portfolio snapshot
         snapshot = self.calculate_portfolio_snapshot(
@@ -428,6 +545,7 @@ class Transformer:
         
         total_rows = sum(r.row_count for r in results.values())
         total_rejected = sum(r.rejected_count for r in results.values())
-        logger.info(f"Transform complete: {total_rows} rows, {total_rejected} rejected")
+        total_errors = sum(len(r.errors) for r in results.values())
+        logger.info(f"Transform complete: {total_rows} rows, {total_rejected} rejected, {total_errors} validation errors")
         
         return results
