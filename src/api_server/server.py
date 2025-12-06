@@ -9,6 +9,7 @@ import jwt
 import hashlib
 import os
 import sys
+import logging
 from decimal import Decimal
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import text
@@ -2698,7 +2699,6 @@ async def get_reference_data(ref_type: str):
             data = [{'code': row[0], 'name': row[1]} for row in result]
     except Exception as e:
         # Log error and return empty list
-        import logging
         logging.error(f"Failed to load reference data '{ref_type}' from database: {e}")
         data = []
     finally:
