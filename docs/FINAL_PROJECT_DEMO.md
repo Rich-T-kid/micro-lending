@@ -5,35 +5,60 @@ Date: December 2025
 
 ---
 
-## PREREQUISITES
+## PRE-DEMO SETUP
 
-### Start Docker (Redis)
+We will need **5 terminal windows** open during the demo. Set them up as follows:
+
+### Terminal 1: Redis (Docker)
 ```bash
+cd /Users/sakshammehta/Desktop/College/Database\ Administration/microlending_project
 docker-compose up -d
+docker ps --filter name=redis  # Verify running
 ```
+Expected output: Container `microlending-redis` with status `Up`
 
-### Verify Redis is Running
+### Terminal 2: API Server
 ```bash
-docker ps --filter name=redis
-```
-
-### Start API Server
-```bash
-cd src/api_server
+cd /Users/sakshammehta/Desktop/College/Database\ Administration/microlending_project/src/api_server
 source ../../venv/bin/activate
 uvicorn server:app --reload --port 8000
 ```
+Expected output: `Uvicorn running on http://127.0.0.1:8000`
+Keep this terminal open - you'll see cache/DB logs here during demo.
 
-### Start Frontend GUI (New Terminal)
+### Terminal 3: Frontend Server
 ```bash
-cd frontend
+cd /Users/sakshammehta/Desktop/College/Database\ Administration/microlending_project/frontend
 npm start
 ```
-Frontend runs at: http://localhost:3000
+Expected output: `Server running at http://localhost:3000`
+Open http://localhost:3000 in browser for GUI demo.
 
-### MySQL Connection
+### Terminal 4: MySQL Client (for SQL queries)
 ```bash
 mysql -h micro-lending.cmvo24soe2b0.us-east-1.rds.amazonaws.com -u admin -pmicropass microlending
+```
+Keep this open for running all SQL queries during Part 1.
+
+### Terminal 5: Working Terminal (for bash/curl commands)
+```bash
+cd /Users/sakshammehta/Desktop/College/Database\ Administration/microlending_project
+source venv/bin/activate
+```
+Use this terminal for:
+- ETL commands (`python run_etl.py`)
+- curl commands (API requests)
+- redis-cli commands
+- docker commands
+
+### Quick Verification Checklist
+Before starting the demo, verify all services are running:
+```bash
+# In Terminal 5:
+docker ps --filter name=redis          # Redis container running
+curl -s http://localhost:8000/health   # API returns OK
+curl -s http://localhost:3000          # Frontend loads
+redis-cli ping                         # Returns PONG
 ```
 
 ---
@@ -179,6 +204,32 @@ python run_etl.py --mode full
 python run_etl.py --mode incremental
 ```
 
+### Step 3.7: Bulk Load Technique - LOAD DATA INFILE
+Our ETL uses MySQL's LOAD DATA LOCAL INFILE for high-performance bulk loading:
+```sql
+-- View the bulk load configuration in Python
+SELECT 'Bulk Load Settings' as config_item, 'Value' as setting
+UNION ALL SELECT 'BATCH_SIZE', '5000'
+UNION ALL SELECT 'USE_LOAD_DATA_INFILE', 'TRUE'
+UNION ALL SELECT 'DISABLE_INDEXES_ON_BULK', 'TRUE';
+```
+
+```bash
+# The ETL loader writes CSV to temp file, then bulk loads:
+# LOAD DATA LOCAL INFILE '/tmp/staging.csv'
+# INTO TABLE etl_staging_loan
+# FIELDS TERMINATED BY ','
+# ENCLOSED BY '"'
+# LINES TERMINATED BY '\n'
+
+# View load performance from step log:
+mysql -h $MYSQL_HOST -u $MYSQL_USER -p$MYSQL_PASSWORD $MYSQL_DATABASE \
+  -e "SELECT step_name, rows_processed, duration_seconds, 
+       ROUND(rows_processed/NULLIF(duration_seconds,0), 1) as rows_per_sec 
+       FROM etl_step_log WHERE step_type = 'load' ORDER BY step_id DESC LIMIT 3;"
+```
+Look for: rows/sec showing bulk load throughput
+
 ---
 
 ## REQUIREMENT 4: STORED PROCEDURES WITH ERROR HANDLING
@@ -205,6 +256,42 @@ SELECT @valid as is_valid, @code as error_code, @msg as message;
 ```sql
 CALL sp_etl_validate_loan(1, 99999, 5000.00, 12.5, 12, 'active', @valid, @code, @msg);
 SELECT @valid as is_valid, @code as error_code, @msg as message;
+```
+
+### Step 4.5: ETL Error Log - Central Error Store
+View errors captured by stored procedures with full context:
+```sql
+SELECT 
+    error_id,
+    run_id,
+    error_type,
+    error_code,
+    error_message,
+    source_table,
+    source_record_id,
+    created_at as timestamp
+FROM etl_error_log 
+ORDER BY error_id DESC LIMIT 5;
+```
+
+### Step 4.6: Error Log Schema (Required Fields)
+```sql
+DESCRIBE etl_error_log;
+```
+Shows: error_id, run_id, step_id, error_type, error_code, error_message, source_table, source_record_id, error_data (JSON), created_at
+
+### Step 4.7: Processing Metrics - Rows/Sec and Duration
+```sql
+SELECT 
+    r.run_id,
+    r.run_type,
+    r.rows_extracted,
+    r.rows_loaded,
+    r.rows_rejected,
+    TIMESTAMPDIFF(SECOND, r.started_at, r.completed_at) as duration_secs,
+    ROUND(r.rows_loaded / NULLIF(TIMESTAMPDIFF(SECOND, r.started_at, r.completed_at), 0), 1) as rows_per_sec
+FROM etl_run_log r
+ORDER BY r.run_id DESC LIMIT 3;
 ```
 
 ---
@@ -463,6 +550,72 @@ curl -X DELETE http://localhost:8000/cache/metrics
 ```
 
 Clears all metrics for fresh testing.
+
+---
+
+## REQUIREMENT 13: GRACEFUL FALLBACK WHEN REDIS UNAVAILABLE
+
+This demonstrates that the system gracefully falls back to the database when Redis is unavailable.
+
+### Step 13.1: Verify Redis is Running
+```bash
+docker ps --filter name=redis
+```
+
+### Step 13.2: Make a Cached Request (Baseline)
+```bash
+curl -s http://localhost:8000/cache/reference/currencies | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+print(f'Status: OK, Cached: {d.get(\"cached\", \"N/A\")}, Items: {len(d.get(\"data\", []))}')
+"
+```
+
+### Step 13.3: Stop Redis Container
+```bash
+docker stop microlending-redis
+```
+
+### Step 13.4: Request Data - Should Fallback to DB
+```bash
+curl -s http://localhost:8000/cache/reference/currencies | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+print(f'Status: OK (fallback to DB), Items: {len(d.get(\"data\", []))}')
+print('Note: cached field may be false or absent - data served from database')
+"
+```
+Look for: Request succeeds even with Redis down, data returned from database
+
+### Step 13.5: Check Server Logs for Fallback Message
+```bash
+# In the API server terminal, you should see:
+# WARNING - Redis unavailable, falling back to database
+# or similar error handling message
+```
+
+### Step 13.6: Restart Redis
+```bash
+docker start microlending-redis
+```
+
+### Step 13.7: Verify Cache Works Again
+```bash
+# First request - cache miss (Redis was just restarted)
+curl -s http://localhost:8000/cache/reference/currencies | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+print(f'After restart - Cached: {d.get(\"cached\", False)}')
+"
+
+# Second request - cache hit
+curl -s http://localhost:8000/cache/reference/currencies | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+print(f'Second request - Cached: {d.get(\"cached\", False)}')
+"
+```
+Look for: First request shows `cached: false`, second shows `cached: true`
 
 ---
 
