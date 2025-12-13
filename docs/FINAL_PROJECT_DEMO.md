@@ -11,7 +11,7 @@ We will need **5 terminal windows** open during the demo. Set them up as follows
 
 ### Terminal 1: Redis (Docker)
 ```bash
-cd /Users/sakshammehta/Desktop/College/Database\ Administration/microlending_project
+cd to /microlending_project
 docker-compose up -d
 docker ps --filter name=redis  # Verify running
 ```
@@ -19,7 +19,7 @@ Expected output: Container `microlending-redis` with status `Up`
 
 ### Terminal 2: API Server
 ```bash
-cd /Users/sakshammehta/Desktop/College/Database\ Administration/microlending_project/src/api_server
+cd  to microlending_project/src/api_server
 source ../../venv/bin/activate
 uvicorn server:app --reload --port 8000
 ```
@@ -28,7 +28,7 @@ Keep this terminal open - you'll see cache/DB logs here during demo.
 
 ### Terminal 3: Frontend Server
 ```bash
-cd /Users/sakshammehta/Desktop/College/Database\ Administration/microlending_project/frontend
+cd to microlending_project/frontend
 npm start
 ```
 Expected output: `Server running at http://localhost:3000`
@@ -42,7 +42,6 @@ Keep this open for running all SQL queries during Part 1.
 
 ### Terminal 5: Working Terminal (for bash/curl commands)
 ```bash
-cd /Users/sakshammehta/Desktop/College/Database\ Administration/microlending_project
 source venv/bin/activate
 ```
 Use this terminal for:
