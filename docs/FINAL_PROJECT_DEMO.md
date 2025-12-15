@@ -1,7 +1,7 @@
 # Final Project Demonstration Document - MicroLending Analytics Platform
 
 Students: Saksham Mehta, Jose Lamela, Richard Baah  
-Date: December 2025
+Date: 15th December 2025
 
 ---
 
