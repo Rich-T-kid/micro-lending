@@ -1,0 +1,49 @@
+2025-12-15 15:09:16,142 | INFO | etl.run_18 | ETL Run 18 started (full mode)
+2025-12-15 15:09:16,143 | INFO | etl_orchestrator | ETL Run 18 started (full mode)
+2025-12-15 15:09:16,143 | INFO | etl_orchestrator | Starting extract phase (full mode), batch_size=5000
+2025-12-15 15:09:16,143 | INFO | etl.run_18 | Starting extract phase (full mode)
+2025-12-15 15:09:16,224 | INFO | reporting.etl.extract | Full extract from transaction_db.user: 10 rows in 0.01s
+2025-12-15 15:09:16,238 | INFO | reporting.etl.extract | Full extract from transaction_db.loan: 27 rows in 0.01s
+2025-12-15 15:09:16,252 | INFO | reporting.etl.extract | Full extract from transaction_db.loan_application: 27 rows in 0.01s
+2025-12-15 15:09:16,270 | INFO | reporting.etl.extract | Full extract from transaction_db.transaction_ledger: 5 rows in 0.02s
+2025-12-15 15:09:16,291 | INFO | reporting.etl.extract | Full extract from transaction_db.repayment_schedule: 40 rows in 0.02s
+2025-12-15 15:09:16,337 | INFO | reporting.etl.extract | Full load: Updated watermark for transaction_db.user to 2025-10-30 16:20:16
+2025-12-15 15:09:16,385 | INFO | reporting.etl.extract | Full load: Updated watermark for transaction_db.loan to 2025-12-03 02:02:08
+2025-12-15 15:09:16,430 | INFO | reporting.etl.extract | Full load: Updated watermark for transaction_db.loan_application to 2025-11-11 04:54:30
+2025-12-15 15:09:16,474 | INFO | reporting.etl.extract | Full load: Updated watermark for transaction_db.transaction_ledger to 2024-03-16 10:00:00
+2025-12-15 15:09:16,489 | WARNING | reporting.etl.extract | Could not update watermark for transaction_db.repayment_schedule: (1054, "Unknown column 'updated_at' in 'field list'")
+2025-12-15 15:09:16,502 | INFO | reporting.etl.extract | Full extract from reference_db.ref_currency: 8 rows in 0.01s
+2025-12-15 15:09:16,516 | INFO | reporting.etl.extract | Full extract from reference_db.ref_loan_product: 10 rows in 0.01s
+2025-12-15 15:09:16,529 | INFO | reporting.etl.extract | Full extract from reference_db.ref_region: 14 rows in 0.01s
+2025-12-15 15:09:16,547 | INFO | reporting.etl.extract | Full extract from reference_db.ref_credit_tier: 5 rows in 0.02s
+2025-12-15 15:09:16,594 | INFO | reporting.etl.extract | Extract complete: 173 total rows from 12 sources
+2025-12-15 15:09:17,806 | INFO | etl_orchestrator | Extract complete: 173 rows in 1.66s
+2025-12-15 15:09:17,807 | INFO | etl_orchestrator | Starting transform phase
+2025-12-15 15:09:17,808 | INFO | reporting.etl.transform | Loaded 7 FX rates for enrichment
+2025-12-15 15:09:17,808 | INFO | reporting.etl.transform | Loaded 8 interest benchmarks
+2025-12-15 15:09:17,808 | INFO | reporting.etl.transform | Loaded 12 credit spreads
+2025-12-15 15:09:17,808 | INFO | reporting.etl.transform | Loaded 10 product definitions
+2025-12-15 15:09:17,808 | INFO | reporting.etl.transform | Loaded 8 currencies
+2025-12-15 15:09:17,808 | INFO | reporting.etl.transform | Loaded 5 credit tiers
+2025-12-15 15:09:17,808 | INFO | reporting.etl.transform | Loaded 14 regions
+2025-12-15 15:09:17,808 | INFO | reporting.etl.transform | Loaded 8 valid loan statuses
+2025-12-15 15:09:17,808 | INFO | reporting.etl.transform | Loaded 3 valid user roles
+2025-12-15 15:09:17,808 | INFO | reporting.etl.transform | Transformed 10 users, rejected 0
+2025-12-15 15:09:17,810 | INFO | reporting.etl.transform | Transformed 27 loans, rejected 0
+2025-12-15 15:09:17,811 | INFO | reporting.etl.transform | Transform complete: 48 rows, 0 rejected, 0 validation errors
+2025-12-15 15:09:18,209 | INFO | etl_orchestrator | Transform complete: 48 rows in 0.40s
+2025-12-15 15:09:18,210 | INFO | etl_orchestrator | Starting load phase
+2025-12-15 15:09:18,321 | INFO | reporting.etl.load | Starting load phase
+2025-12-15 15:09:18,321 | INFO | reporting.etl.load | Batch size: 5000, Run ID: 18
+2025-12-15 15:09:18,358 | INFO | reporting.etl.load | dim_user: 10 rows in 0.037s (269.3 rows/sec)
+2025-12-15 15:09:18,389 | INFO | reporting.etl.load | dim_loan_product: 10 rows in 0.031s (321.8 rows/sec)
+2025-12-15 15:09:18,417 | INFO | reporting.etl.load | Bulk staged 27 loans in 0.028s (973.1 rows/sec)
+2025-12-15 15:09:18,417 | INFO | reporting.etl.load | Staged 27 fact_loan_transactions rows via executemany in 0.028s
+2025-12-15 15:09:18,460 | INFO | reporting.etl.load | Staging validation complete in 0.043s: Users: 0 valid, 0 invalid; Loans: 27 valid, 0 invalid
+2025-12-15 15:09:18,461 | INFO | reporting.etl.load | Staging validation: {'users_valid': 0, 'users_invalid': 0, 'loans_valid': 27, 'loans_invalid': 0, 'validation_time': 0.04311}
+2025-12-15 15:09:18,474 | ERROR | reporting.etl.load | Error calling sp_etl_load_facts_from_staging: (1305, 'PROCEDURE microlending.sp_etl_load_facts_from_staging does not exist')
+2025-12-15 15:09:18,509 | INFO | reporting.etl.load | sp_etl_refresh_portfolio_snapshot: Portfolio snapshot refreshed for 2025-12-15
+2025-12-15 15:09:18,509 | INFO | reporting.etl.load | Load complete: 48 rows in 0.189s (254.4 rows/sec)
+2025-12-15 15:09:19,374 | ERROR | etl.run_18 | Failed to log error to database: (1054, "Unknown column 'severity' in 'field list'")
+2025-12-15 15:09:19,575 | INFO | etl_orchestrator | Load complete: 48 rows in 1.36s
+2025-12-15 15:09:19,696 | INFO | etl_orchestrator | ETL Run 18 completed successfully

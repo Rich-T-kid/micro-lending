@@ -2640,13 +2640,24 @@ async def get_reference_data(ref_type: str):
     metrics = get_cache_metrics()
     cache_key = f"ml:reference:{ref_type}"
     
-    cached_data = redis.get_json(cache_key)
+    # Try to get from Redis cache first (with graceful fallback)
+    redis_available = True
+    try:
+        cached_data = redis.get_json(cache_key) if redis else None
+    except Exception as e:
+        logging.warning(f"Redis unavailable, falling back to database: {e}")
+        redis_available = False
+        cached_data = None
+    
     if cached_data:
         latency_ms = (time.time() - start_time) * 1000
-        ttl = redis.ttl(cache_key)
+        ttl = redis.ttl(cache_key) if redis_available else 0
         # Record cache hit with latency
         if metrics:
-            metrics.record_hit(operation=f'reference:{ref_type}', latency_ms=latency_ms)
+            try:
+                metrics.record_hit(operation=f'reference:{ref_type}', latency_ms=latency_ms)
+            except:
+                pass
         logging.getLogger("cache").info(f"HIT {cache_key} ttl={ttl}s in {latency_ms:.2f}ms")
         return ReferenceDataResponse(type=ref_type, data=cached_data, cached=True, ttl=ttl, latency_ms=round(latency_ms, 2))
     
@@ -2705,12 +2716,20 @@ async def get_reference_data(ref_type: str):
         session.close()
     
     latency_ms = (time.time() - start_time) * 1000
-    redis.set_json(cache_key, data, REFERENCE_TTL)
+    # Try to cache the data (graceful if Redis unavailable)
+    if redis_available and redis:
+        try:
+            redis.set_json(cache_key, data, REFERENCE_TTL)
+        except Exception as e:
+            logging.warning(f"Failed to cache data: {e}")
     # Record cache miss with DB latency
     if metrics:
-        metrics.record_miss(operation=f'reference:{ref_type}', latency_ms=latency_ms)
+        try:
+            metrics.record_miss(operation=f'reference:{ref_type}', latency_ms=latency_ms)
+        except:
+            pass
     logging.getLogger("cache").info(f"MISS {cache_key} loaded from DB in {latency_ms:.2f}ms ttl={REFERENCE_TTL}s")
-    return ReferenceDataResponse(type=ref_type, data=data, cached=False, ttl=REFERENCE_TTL, latency_ms=round(latency_ms, 2))
+    return ReferenceDataResponse(type=ref_type, data=data, cached=False, ttl=REFERENCE_TTL if redis_available else 0, latency_ms=round(latency_ms, 2))
 
 @app.delete("/cache/reference/{ref_type}")
 async def invalidate_reference_cache(ref_type: str):

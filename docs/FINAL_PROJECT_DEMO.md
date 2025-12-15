@@ -38,7 +38,6 @@ Open http://localhost:3000 in browser for GUI demo.
 ```bash
 mysql -h micro-lending.cmvo24soe2b0.us-east-1.rds.amazonaws.com -u admin -pmicropass microlending
 ```
-Keep this open for running all SQL queries during Part 1.
 
 ### Terminal 5: Working Terminal (for bash/curl commands)
 ```bash
@@ -85,14 +84,14 @@ DESCRIBE fact_loan_transactions;
 
 ### Step 1.4: Fact Table Row Counts
 ```sql
-SELECT 'fact_loan_transactions' as table_name, COUNT(*) as rows FROM fact_loan_transactions
+SELECT 'fact_loan_transactions' as table_name, COUNT(*) as row_count FROM fact_loan_transactions
 UNION ALL
 SELECT 'fact_daily_portfolio', COUNT(*) FROM fact_daily_portfolio;
 ```
 
 ### Step 1.5: Dimension Table Row Counts
 ```sql
-SELECT 'dim_date' as table_name, COUNT(*) as rows FROM dim_date
+SELECT 'dim_date' as table_name, COUNT(*) as row_count FROM dim_date
 UNION ALL SELECT 'dim_user', COUNT(*) FROM dim_user
 UNION ALL SELECT 'dim_loan_product', COUNT(*) FROM dim_loan_product
 UNION ALL SELECT 'dim_currency', COUNT(*) FROM dim_currency
@@ -132,7 +131,7 @@ SELECT * FROM dim_loan_status;
 
 ### Step 2.1: Source 1 - Transaction Database (OLTP)
 ```sql
-SELECT 'user' as table_name, COUNT(*) as rows FROM user
+SELECT 'user' as table_name, COUNT(*) as row_count FROM user
 UNION ALL SELECT 'loan', COUNT(*) FROM loan
 UNION ALL SELECT 'loan_application', COUNT(*) FROM loan_application
 UNION ALL SELECT 'wallet_account', COUNT(*) FROM wallet_account;
@@ -140,7 +139,7 @@ UNION ALL SELECT 'wallet_account', COUNT(*) FROM wallet_account;
 
 ### Step 2.2: Source 2 - Reference Data
 ```sql
-SELECT 'ref_currency' as table_name, COUNT(*) as rows FROM ref_currency
+SELECT 'ref_currency' as table_name, COUNT(*) as row_count FROM ref_currency
 UNION ALL SELECT 'ref_loan_product', COUNT(*) FROM ref_loan_product
 UNION ALL SELECT 'ref_region', COUNT(*) FROM ref_region
 UNION ALL SELECT 'ref_credit_tier', COUNT(*) FROM ref_credit_tier;
@@ -148,7 +147,7 @@ UNION ALL SELECT 'ref_credit_tier', COUNT(*) FROM ref_credit_tier;
 
 ### Step 2.3: Source 3 - Market Data
 ```sql
-SELECT 'market_fx_rates' as table_name, COUNT(*) as rows FROM market_fx_rates
+SELECT 'market_fx_rates' as table_name, COUNT(*) as row_count FROM market_fx_rates
 UNION ALL SELECT 'market_interest_benchmarks', COUNT(*) FROM market_interest_benchmarks
 UNION ALL SELECT 'market_credit_spreads', COUNT(*) FROM market_credit_spreads;
 ```
@@ -258,6 +257,22 @@ SELECT @valid as is_valid, @code as error_code, @msg as message;
 ```
 
 ### Step 4.5: ETL Error Log - Central Error Store
+First, insert dummy run_id records (required for foreign key constraint), then run demo_errors.py:
+```sql
+-- Insert dummy run records for demo_errors.py (IGNORE prevents errors if already exist)
+INSERT IGNORE INTO etl_run_log (run_id, run_type, status, started_at) VALUES 
+(9999, 'demo', 'running', NOW()),
+(9998, 'demo', 'running', NOW()),
+(9997, 'demo', 'running', NOW()),
+(9996, 'demo', 'running', NOW()),
+(9995, 'demo', 'running', NOW());
+```
+
+```bash
+cd reporting/etl
+python demo_errors.py
+```
+
 View errors captured by stored procedures with full context:
 ```sql
 SELECT 
@@ -422,8 +437,7 @@ Look for: `"cached": false` (fresh load)
 ### Step 9.4: Add New Reference Data and Verify Refresh
 ```bash
 # Insert a new currency (example)
-mysql -h $MYSQL_HOST -u $MYSQL_USER -p$MYSQL_PASSWORD $MYSQL_DATABASE \
-  -e "INSERT INTO ref_currency (currency_code, currency_name, symbol) VALUES ('ZAR','South African Rand','R')"
+INSERT INTO ref_currency (currency_code, currency_name, symbol) VALUES ('ZAR','South African Rand','R');
 
 # Invalidate currencies cache
 curl -X DELETE http://localhost:8000/cache/reference/currencies

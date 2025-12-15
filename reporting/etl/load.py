@@ -261,7 +261,7 @@ class Loader:
         rows_per_sec = total_staged / elapsed if elapsed > 0 else 0
         
         logger.info(f"Bulk staged {total_staged} loans in {elapsed:.3f}s ({rows_per_sec:.1f} rows/sec)")
-        return total_staged, elapsed
+        return total_staged, elapsed, load_method
 
     def validate_staging_via_sp(self, run_id: int) -> Dict:
         """Validate staging records using stored procedure."""
